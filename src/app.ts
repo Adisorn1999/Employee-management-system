@@ -9,7 +9,7 @@ import authRoutes from "../routes/auth.routes";
 import { HttpError } from "../utils/errors";
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001;
 
 // Basic hardening headers. Tune CSP separately if this API also serves pages.
 app.use(helmet());
