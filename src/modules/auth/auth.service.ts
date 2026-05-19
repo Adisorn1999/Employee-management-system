@@ -1,5 +1,6 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 import { User } from "@prisma/client";
+import { randomUUID } from "crypto";
 
 import prisma from "../../config/prisma";
 import { httpError } from "../../common/utils/errors";
@@ -24,6 +25,13 @@ type AccessTokenPayload = JwtPayload & {
 
 type RefreshTokenPayload = JwtPayload & {
   sub: string;
+  sessionId: string;
+};
+
+export type SessionMetadata = {
+  ipAddress?: string;
+  userAgent?: string;
+  deviceName?: string;
 };
 
 function getRefreshExpiryDate(): Date {
@@ -48,8 +56,8 @@ export function signAccessToken(user: Pick<User, "id" | "username" | "role">): s
   );
 }
 
-function signRefreshToken(user: Pick<User, "id">): string {
-  return jwt.sign({ sub: user.id }, refreshSecret, { expiresIn: refreshExpiresIn } as SignOptions);
+function signRefreshToken(user: Pick<User, "id">, sessionId: string): string {
+  return jwt.sign({ sub: user.id, sessionId }, refreshSecret, { expiresIn: refreshExpiresIn } as SignOptions);
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
@@ -67,18 +75,34 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 
 function verifyRefreshToken(token: string): RefreshTokenPayload {
   const payload = jwt.verify(token, refreshSecret);
-  if (typeof payload === "string" || typeof payload.sub !== "string") {
+  if (
+    typeof payload === "string" ||
+    typeof payload.sub !== "string" ||
+    typeof payload.sessionId !== "string"
+  ) {
     throw httpError("Invalid refresh token", 401);
   }
   return payload as unknown as RefreshTokenPayload;
 }
 
-export async function createRefreshToken(user: Pick<User, "id">): Promise<string> {
-  const token = signRefreshToken(user);
-  const tokenHash = hashToken(token);
+export async function createSessionRefreshToken(
+  user: Pick<User, "id">,
+  metadata: SessionMetadata = {}
+): Promise<string> {
+  const sessionId = randomUUID();
+  const token = signRefreshToken(user, sessionId);
+  const refreshTokenHash = hashToken(token);
 
-  await prisma.refreshToken.create({
-    data: { tokenHash, userId: user.id, expiresAt: getRefreshExpiryDate() },
+  await prisma.session.create({
+    data: {
+      id: sessionId,
+      userId: user.id,
+      refreshTokenHash,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      deviceName: metadata.deviceName,
+      expiresAt: getRefreshExpiryDate(),
+    },
   });
 
   return token;
@@ -86,46 +110,56 @@ export async function createRefreshToken(user: Pick<User, "id">): Promise<string
 
 export async function rotateRefreshToken(currentToken: string) {
   const payload = verifyRefreshToken(currentToken);
-  const tokenHash = hashToken(currentToken);
+  const refreshTokenHash = hashToken(currentToken);
 
-  const storedToken = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
+  const session = await prisma.session.findUnique({
+    where: { id: payload.sessionId },
     include: { user: true },
   });
 
   if (
-    !storedToken ||
-    storedToken.userId !== payload.sub ||
-    storedToken.revokedAt ||
-    storedToken.expiresAt <= new Date()
+    !session ||
+    session.userId !== payload.sub ||
+    session.revokedAt ||
+    session.expiresAt <= new Date() ||
+    session.refreshTokenHash !== refreshTokenHash
   ) {
     throw httpError("Invalid refresh token", 401);
   }
 
-  const nextToken = signRefreshToken(storedToken.user);
-  const nextTokenHash = hashToken(nextToken);
+  const nextToken = signRefreshToken(session.user, session.id);
+  const nextRefreshTokenHash = hashToken(nextToken);
 
-  await prisma.$transaction([
-    prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: { revokedAt: new Date(), replacedBy: nextTokenHash },
-    }),
-    prisma.refreshToken.create({
-      data: { tokenHash: nextTokenHash, userId: storedToken.userId, expiresAt: getRefreshExpiryDate() },
-    }),
-  ]);
+  await prisma.session.update({
+    where: { id: session.id },
+    data: {
+      refreshTokenHash: nextRefreshTokenHash,
+      expiresAt: getRefreshExpiryDate(),
+    },
+  });
 
   return {
-    accessToken: signAccessToken(storedToken.user),
+    accessToken: signAccessToken(session.user),
     refreshToken: nextToken,
-    user: storedToken.user,
+    user: session.user,
   };
 }
 
-export async function revokeRefreshToken(token: string): Promise<void> {
-  const tokenHash = hashToken(token);
-  await prisma.refreshToken.updateMany({
-    where: { tokenHash, revokedAt: null },
+export async function revokeCurrentSession(token: string): Promise<void> {
+  const payload = verifyRefreshToken(token);
+  await prisma.session.updateMany({
+    where: {
+      id: payload.sessionId,
+      userId: payload.sub,
+      revokedAt: null,
+    },
+    data: { revokedAt: new Date() },
+  });
+}
+
+export async function revokeAllSessions(userId: string): Promise<void> {
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }

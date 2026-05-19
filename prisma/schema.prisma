@@ -42,6 +42,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sessions      Session[]
   refreshTokens RefreshToken[]
   authRole      RbacRole?      @relation(fields: [authRoleId], references: [id], onDelete: SetNull)
 
@@ -54,8 +55,28 @@ model User {
 }
 
 // ─────────────────────────────────────
-// REFRESH TOKEN
+// SESSION
 // ─────────────────────────────────────
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  ipAddress        String?
+  userAgent        String?
+  deviceName       String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
 
 model RefreshToken {
   id         String    @id @default(uuid())

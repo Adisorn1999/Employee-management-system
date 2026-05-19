@@ -1,14 +1,16 @@
-import { CookieOptions, RequestHandler } from "express";
+import { CookieOptions, Request, RequestHandler } from "express";
 import { User } from "@prisma/client";
 import { ZodError, z } from "zod";
 
 import prisma from "../../config/prisma";
 import {
-  createRefreshToken,
-  revokeRefreshToken,
+  createSessionRefreshToken,
+  revokeAllSessions,
+  revokeCurrentSession,
   rotateRefreshToken,
   signAccessToken,
 } from "./auth.service";
+import type { SessionMetadata } from "./auth.service";
 import { HttpError, httpError } from "../../common/utils/errors";
 import { hashPassword, verifyPassword } from "../../common/utils/hash";
 
@@ -31,6 +33,15 @@ function refreshCookieOptions(): CookieOptions {
     secure: process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     path: "/api/auth",
+  };
+}
+
+function sessionMetadata(req: Request): SessionMetadata {
+  const userAgent = req.get("user-agent");
+  return {
+    ipAddress: req.ip,
+    userAgent,
+    deviceName: userAgent?.split(/[()/;]/)[0]?.trim() || undefined,
   };
 }
 
@@ -70,7 +81,7 @@ export const register: RequestHandler = async (req, res, next) => {
     });
 
     const accessToken = signAccessToken(user);
-    const refreshToken = await createRefreshToken(user);
+    const refreshToken = await createSessionRefreshToken(user, sessionMetadata(req));
 
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
     res.status(201).json({ accessToken, user: publicUser(user) });
@@ -89,7 +100,7 @@ export const login: RequestHandler = async (req, res, next) => {
     }
 
     const accessToken = signAccessToken(user);
-    const refreshToken = await createRefreshToken(user);
+    const refreshToken = await createSessionRefreshToken(user, sessionMetadata(req));
 
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
     res.status(200).json({ accessToken, user: publicUser(user) });
@@ -123,8 +134,24 @@ export const logout: RequestHandler = async (req, res, next) => {
     const token = req.cookies.refreshToken as string | undefined;
 
     if (token) {
-      await revokeRefreshToken(token);
+      await revokeCurrentSession(token);
     }
+
+    res.clearCookie("refreshToken", refreshCookieOptions());
+    res.status(204).send();
+  } catch (err) {
+    res.clearCookie("refreshToken", refreshCookieOptions());
+    next(err);
+  }
+};
+
+export const logoutAll: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      throw httpError("Unauthorized", 401);
+    }
+
+    await revokeAllSessions(req.user.id);
 
     res.clearCookie("refreshToken", refreshCookieOptions());
     res.status(204).send();
@@ -133,6 +160,8 @@ export const logout: RequestHandler = async (req, res, next) => {
   }
 };
 
-export const profile: RequestHandler = async (req, res) => {
+export const me: RequestHandler = async (req, res) => {
   res.status(200).json({ user: req.user });
 };
+
+export const profile = me;
