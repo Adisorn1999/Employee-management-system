@@ -17,6 +17,7 @@ const permissions = [
   { id: "permission_roles_read", name: "roles.read", description: "Read roles and permissions" },
   { id: "permission_roles_manage", name: "roles.manage", description: "Manage roles and permissions" },
   { id: "permission_audit_read", name: "audit.read", description: "Read audit logs" },
+  { id: "permission_employee_read", name: "employee.read", description: "Read employee records" },
   { id: "permission_profile_read", name: "profile.read", description: "Read own profile" },
   { id: "permission_profile_update", name: "profile.update", description: "Update own profile" },
 ];
@@ -28,11 +29,12 @@ const rolePermissions: Record<string, string[]> = {
     "users.manage",
     "roles.read",
     "audit.read",
+    "employee.read",
     "profile.read",
     "profile.update",
   ],
-  hr: ["users.read", "profile.read", "profile.update"],
-  manager: ["users.read", "profile.read", "profile.update"],
+  hr: ["users.read", "employee.read", "profile.read", "profile.update"],
+  manager: ["users.read", "employee.read", "profile.read", "profile.update"],
   employee: ["profile.read", "profile.update"],
 };
 
