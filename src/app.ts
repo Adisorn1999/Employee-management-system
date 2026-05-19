@@ -1,18 +1,24 @@
 import "dotenv/config";
 
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 
+import { env } from "./config/env";
 import authRoutes from "./modules/auth/auth.route";
 import employeeRoutes from "./modules/employees/employee.route";
 import { errorMiddleware } from "./middleware/error.middleware";
-import { corsMiddleware } from "./plugins/cors";
 
 const app = express();
 
 app.use(helmet());
-app.use(corsMiddleware);
+app.use(
+  cors({
+    origin: env.clientOrigin,
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());

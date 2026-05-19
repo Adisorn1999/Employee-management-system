@@ -37,16 +37,20 @@ model User {
   passwordHash String
   name         String?
   role         Role    @default(USER)
+  authRoleId   String? @map("role_id")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   refreshTokens RefreshToken[]
+  authRole      RbacRole?      @relation(fields: [authRoleId], references: [id], onDelete: SetNull)
 
   schedulesCreated  ShiftSchedule[]    @relation("ScheduleCreatedBy")
   swapHistories     ShiftSwapHistory[] @relation("SwapManagedBy")
   payrollsProcessed Payroll[]          @relation("PayrollProcessedBy")
   attendancesMarked Attendance[]       @relation("AttendanceMarkedBy")
+
+  @@index([authRoleId])
 }
 
 // ─────────────────────────────────────
@@ -67,6 +71,47 @@ model RefreshToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model RbacRole {
+  id          String  @id
+  name        String  @unique
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id
+  name        String  @unique
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       RbacRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
 }
 
 // ─────────────────────────────────────
