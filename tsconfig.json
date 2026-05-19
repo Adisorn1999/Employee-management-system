@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "types": ["node", "express"]
   },
-  "include": ["src/**/*.ts", "controllers/**/*.ts", "lib/**/*.ts", "middleware/**/*.ts", "routes/**/*.ts", "services/**/*.ts", "utils/**/*.ts", "types/**/*.d.ts", "prisma.config.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "prisma/**/*.ts", "prisma.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

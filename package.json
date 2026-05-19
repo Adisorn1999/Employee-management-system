@@ -1,11 +1,11 @@
 {
   "name": "employee-management-system",
   "version": "1.0.0",
-  "main": "dist/src/app.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
-    "start": "node dist/src/app.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start": "node dist/src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
