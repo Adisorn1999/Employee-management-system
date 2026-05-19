@@ -20,6 +20,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
         id: true,
         email: true,
         name: true,
+        role: true,      
         createdAt: true,
         updatedAt: true,
       },

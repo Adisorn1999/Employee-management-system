@@ -22,6 +22,7 @@ const refreshExpiresIn = process.env.REFRESH_TOKEN_EXPIRES_IN || "7d";
 type AccessTokenPayload = JwtPayload & {
   sub: string;
   email: string;
+  role: string;
 };
 
 type RefreshTokenPayload = JwtPayload & {
@@ -46,11 +47,12 @@ function getRefreshExpiryDate(): Date {
   return new Date(Date.now() + milliseconds);
 }
 
-export function signAccessToken(user: Pick<User, "id" | "email">): string {
+export function signAccessToken(user: Pick<User, "id" | "email" | "role">): string {
   return jwt.sign(
     {
       sub: user.id,
       email: user.email,
+      role: user.role,
     },
     accessSecret,
     { expiresIn: accessExpiresIn } as SignOptions
@@ -63,7 +65,7 @@ function signRefreshToken(user: Pick<User, "id">): string {
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
   const payload = jwt.verify(token, accessSecret);
-  if (typeof payload === "string" || typeof payload.sub !== "string" || typeof payload.email !== "string") {
+  if (typeof payload === "string" || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.role !== "string") {
     throw httpError("Invalid access token", 401);
   }
 
