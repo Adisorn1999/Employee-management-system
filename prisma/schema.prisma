@@ -1,15 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
+
+// ─────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────
 
 enum Role {
   ADMIN
@@ -17,16 +17,41 @@ enum Role {
   USER
 }
 
-model User {
-  id            String         @id @default(uuid())
-  username         String         @unique
-  passwordHash  String
-  name          String?
-  role          Role           @default(USER)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  refreshTokens RefreshToken[]
+enum ShiftType {
+  MORNING
+  NIGHT
 }
+
+enum PayrollItemType {
+  INCOME
+  DEDUCTION
+}
+
+// ─────────────────────────────────────
+// USER
+// ─────────────────────────────────────
+
+model User {
+  id           String  @id @default(uuid())
+  username     String  @unique
+  passwordHash String
+  name         String?
+  role         Role    @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  schedulesCreated  ShiftSchedule[]    @relation("ScheduleCreatedBy")
+  swapHistories     ShiftSwapHistory[] @relation("SwapManagedBy")
+  payrollsProcessed Payroll[]          @relation("PayrollProcessedBy")
+  attendancesMarked Attendance[]       @relation("AttendanceMarkedBy")
+}
+
+// ─────────────────────────────────────
+// REFRESH TOKEN
+// ─────────────────────────────────────
 
 model RefreshToken {
   id         String    @id @default(uuid())
@@ -35,9 +60,218 @@ model RefreshToken {
   expiresAt  DateTime
   revokedAt  DateTime?
   replacedBy String?
-  createdAt  DateTime  @default(now())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ─────────────────────────────────────
+// EMPLOYEE
+// ─────────────────────────────────────
+
+model Employee {
+  id String @id @default(uuid())
+
+  prefix     String
+  employeeNo String @unique
+
+  name     String
+  email    String? @unique
+  phone    String?
+  position String?
+
+  baseSalary    Decimal @default(0) @db.Decimal(10, 2)
+  mealAllowance Decimal @default(0) @db.Decimal(10, 2)
+  allowance     Decimal @default(0) @db.Decimal(10, 2)
+
+  lateRatePerMin Decimal @default(0) @db.Decimal(10, 2)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schedules ShiftSchedule[]
+
+  swapHistoriesFrom ShiftSwapHistory[] @relation("SwapFromEmployee")
+  swapHistoriesTo   ShiftSwapHistory[] @relation("SwapToEmployee")
+
+  attendances Attendance[]
+  payrolls    Payroll[]
+
+  @@index([prefix])
+}
+
+// ─────────────────────────────────────
+// SHIFT SCHEDULE
+// ─────────────────────────────────────
+
+model ShiftSchedule {
+  id String @id @default(uuid())
+
+  employeeId String
+  shiftDate  DateTime  @db.Date
+  shiftType  ShiftType
+
+  createdBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  creator User @relation("ScheduleCreatedBy", fields: [createdBy], references: [id])
+
+  @@unique([employeeId, shiftDate])
+  @@index([shiftDate])
+  @@index([employeeId])
+}
+
+// ─────────────────────────────────────
+// SHIFT SWAP HISTORY
+// ─────────────────────────────────────
+
+model ShiftSwapHistory {
+  id String @id @default(uuid())
+
+  fromEmployee String
+  toEmployee   String
+
+  shiftDate DateTime @db.Date
+
+  fromShift ShiftType
+  toShift   ShiftType
+
+  managedBy String
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  employeeFrom Employee @relation("SwapFromEmployee", fields: [fromEmployee], references: [id])
+
+  employeeTo Employee @relation("SwapToEmployee", fields: [toEmployee], references: [id])
+
+  manager User @relation("SwapManagedBy", fields: [managedBy], references: [id])
+
+  @@index([shiftDate])
+  @@index([fromEmployee])
+  @@index([toEmployee])
+}
+
+// ─────────────────────────────────────
+// ATTENDANCE
+// ─────────────────────────────────────
+
+model Attendance {
+  id String @id @default(uuid())
+
+  employeeId String
+
+  date DateTime @db.Date
+
+  isPresent Boolean @default(true)
+  isAbsent  Boolean @default(false)
+
+  lateMinutes Int @default(0)
+
+  note String?
+
+  markedBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  marker User @relation("AttendanceMarkedBy", fields: [markedBy], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([employeeId])
+}
+
+// ─────────────────────────────────────
+// HOLIDAY
+// ─────────────────────────────────────
+
+model Holiday {
+  id String @id @default(uuid())
+
+  name String
+
+  date DateTime @db.Date
+
+  multiplier Decimal @db.Decimal(4, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
+}
+
+// ─────────────────────────────────────
+// PAYROLL
+// ─────────────────────────────────────
+
+model Payroll {
+  id String @id @default(uuid())
+
+  employeeId String
+
+  month Int
+  year  Int
+
+  totalIncome    Decimal @default(0) @db.Decimal(10, 2)
+  totalDeduction Decimal @default(0) @db.Decimal(10, 2)
+
+  netSalary Decimal @default(0) @db.Decimal(10, 2)
+
+  totalAbsent  Int @default(0)
+  totalLateMin Int @default(0)
+
+  note String?
+
+  processedBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  processor User @relation("PayrollProcessedBy", fields: [processedBy], references: [id])
+
+  items PayrollItem[]
+
+  @@unique([employeeId, month, year])
+  @@index([employeeId])
+  @@index([month, year])
+}
+
+// ─────────────────────────────────────
+// PAYROLL ITEM
+// ─────────────────────────────────────
+
+model PayrollItem {
+  id String @id @default(uuid())
+
+  payrollId String
+
+  type PayrollItemType
+
+  title String
+
+  amount Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  payroll Payroll @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+
+  @@index([payrollId])
+  @@index([type])
 }
