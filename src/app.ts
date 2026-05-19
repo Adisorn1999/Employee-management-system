@@ -11,7 +11,7 @@ import employeeRoutes from "./modules/employees/employee.route";
 import { errorMiddleware } from "./middleware/error.middleware";
 
 const app = express();
-
+app.set("trust proxy", 1);
 app.use(helmet());
 app.use(
   cors({

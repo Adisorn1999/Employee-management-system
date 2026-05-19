@@ -1,6 +1,5 @@
 import prisma from "../src/config/prisma";
 import bcrypt from "bcrypt";
-import { randomUUID } from "crypto";
 
 const roles = [
   { id: "role_super_admin", name: "super_admin", description: "Full system access" },
@@ -48,35 +47,46 @@ async function main() {
   await prisma.$connect();
 
   for (const role of roles) {
-    await prisma.$executeRaw`
-      INSERT INTO "roles" ("id", "name", "description", "created_at", "updated_at")
-      VALUES (${role.id}, ${role.name}, ${role.description}, NOW(), NOW())
-      ON CONFLICT ("name") DO UPDATE
-      SET "description" = EXCLUDED."description",
-          "updated_at" = NOW()
-    `;
+    await prisma.rbacRole.upsert({
+      where: { name: role.name },
+      update: { description: role.description },
+      create: role,
+    });
   }
 
   for (const permission of permissions) {
-    await prisma.$executeRaw`
-      INSERT INTO "permissions" ("id", "name", "description", "created_at", "updated_at")
-      VALUES (${permission.id}, ${permission.name}, ${permission.description}, NOW(), NOW())
-      ON CONFLICT ("name") DO UPDATE
-      SET "description" = EXCLUDED."description",
-          "updated_at" = NOW()
-    `;
+    await prisma.permission.upsert({
+      where: { name: permission.name },
+      update: { description: permission.description },
+      create: permission,
+    });
   }
 
   for (const [roleName, permissionNames] of Object.entries(rolePermissions)) {
+    const role = await prisma.rbacRole.findUniqueOrThrow({
+      where: { name: roleName },
+      select: { id: true },
+    });
+
     for (const permissionName of permissionNames) {
-      await prisma.$executeRaw`
-        INSERT INTO "role_permissions" ("role_id", "permission_id", "created_at")
-        SELECT "roles"."id", "permissions"."id", NOW()
-        FROM "roles", "permissions"
-        WHERE "roles"."name" = ${roleName}
-          AND "permissions"."name" = ${permissionName}
-        ON CONFLICT ("role_id", "permission_id") DO NOTHING
-      `;
+      const permission = await prisma.permission.findUniqueOrThrow({
+        where: { name: permissionName },
+        select: { id: true },
+      });
+
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: role.id,
+            permissionId: permission.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: role.id,
+          permissionId: permission.id,
+        },
+      });
     }
   }
 
@@ -87,25 +97,22 @@ async function main() {
     throw new Error("super_admin role is missing from seed data");
   }
 
-  await prisma.$executeRaw`
-    INSERT INTO "User" ("id", "username", "passwordHash", "name", "role", "role_id", "createdAt", "updatedAt")
-    VALUES (
-      ${randomUUID()},
-      ${superAdmin.username},
-      ${passwordHash},
-      ${superAdmin.name},
-      'ADMIN',
-      ${superAdminRole.id},
-      NOW(),
-      NOW()
-    )
-    ON CONFLICT ("username") DO UPDATE
-    SET "passwordHash" = EXCLUDED."passwordHash",
-        "name" = EXCLUDED."name",
-        "role" = EXCLUDED."role",
-        "role_id" = EXCLUDED."role_id",
-        "updatedAt" = NOW()
-  `;
+  await prisma.user.upsert({
+    where: { username: superAdmin.username },
+    update: {
+      passwordHash,
+      name: superAdmin.name,
+      role: "ADMIN",
+      authRoleId: superAdminRole.id,
+    },
+    create: {
+      username: superAdmin.username,
+      passwordHash,
+      name: superAdmin.name,
+      role: "ADMIN",
+      authRoleId: superAdminRole.id,
+    },
+  });
 
   console.log("Seeded auth foundation: roles, permissions, role permissions, and super admin.");
 }
