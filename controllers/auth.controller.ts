@@ -13,17 +13,17 @@ import { HttpError, httpError } from "../utils/errors";
 import { hashPassword, verifyPassword } from "../utils/hash";
 
 const registerSchema = z.object({
-  email: z.string().email().max(255).transform((value) => value.toLowerCase()),
+  username: z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_]+$/, "username ใช้ได้เฉพาะ a-z, 0-9, _"),
   password: z.string().min(8).max(128),
   name: z.string().trim().min(1).max(100).optional(),
 });
 
 const loginSchema = z.object({
-  email: z.string().email().max(255).transform((value) => value.toLowerCase()),
+  username: z.string().trim().min(1).max(50),
   password: z.string().min(1).max(128),
 });
 
-export type PublicUser = Pick<User, "id" | "email" | "name" | "createdAt" | "updatedAt">;
+export type PublicUser = Pick<User, "id" | "username" | "name" | "role" | "createdAt" | "updatedAt">;
 
 function refreshCookieOptions(): CookieOptions {
   return {
@@ -37,12 +37,11 @@ function refreshCookieOptions(): CookieOptions {
 function publicUser(user: PublicUser): PublicUser {
   return {
     id: user.id,
-    email: user.email,
+    username: user.username,
     name: user.name,
     role: user.role,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
-    
   };
 }
 
@@ -50,22 +49,21 @@ function handleZodError(err: unknown): HttpError | unknown {
   if (err instanceof ZodError) {
     return httpError(err.issues.map((item) => item.message).join(", "), 400);
   }
-
   return err;
 }
 
 export const register: RequestHandler = async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
-    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    const existingUser = await prisma.user.findUnique({ where: { username: data.username } });
 
     if (existingUser) {
-      throw httpError("Email is already registered", 409);
+      throw httpError("Username is already taken", 409);
     }
 
     const user = await prisma.user.create({
       data: {
-        email: data.email,
+        username: data.username,
         name: data.name,
         passwordHash: await hashPassword(data.password),
       },
@@ -84,10 +82,10 @@ export const register: RequestHandler = async (req, res, next) => {
 export const login: RequestHandler = async (req, res, next) => {
   try {
     const data = loginSchema.parse(req.body);
-    const user = await prisma.user.findUnique({ where: { email: data.email } });
+    const user = await prisma.user.findUnique({ where: { username: data.username } });
 
     if (!user || !(await verifyPassword(data.password, user.passwordHash))) {
-      throw httpError("Invalid email or password", 401);
+      throw httpError("Invalid username or password", 401);
     }
 
     const accessToken = signAccessToken(user);

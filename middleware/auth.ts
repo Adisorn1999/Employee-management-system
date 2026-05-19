@@ -18,7 +18,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
       where: { id: payload.sub },
       select: {
         id: true,
-        email: true,
+        username: true,
         name: true,
         role: true,      
         createdAt: true,
