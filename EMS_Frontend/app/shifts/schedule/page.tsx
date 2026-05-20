@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useMutation,
   useQueries,
@@ -59,6 +59,8 @@ import {
 } from "@/services/attendance.service";
 import { listDepartments } from "@/services/department.service";
 import { listEmployees } from "@/services/employee.service";
+import { listLeaves } from "@/services/leave.service";
+import { listOffDays } from "@/services/off-day.service";
 import {
   changeShift,
   listShiftSchedules,
@@ -82,7 +84,7 @@ type SelectedCell = {
 
 type ScheduleAttendanceRow = SelectedCell & {
   attendance?: AttendanceRecord;
-  status: "OFF" | "HOLIDAY" | "LEAVE" | "Not checked in" | "Working" | "Completed";
+  status: "OFF" | "MONTHLY_OFF" | "EXTRA_OFF" | "SPECIAL_OFF" | "LEAVE" | "Not checked in" | "Working" | "Completed";
 };
 
 type StoredAttendanceStatus = "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";
@@ -304,6 +306,16 @@ function getAttendanceDate(attendance: AttendanceRecord) {
   return attendance.shiftSchedule?.workDate?.slice(0, 10);
 }
 
+function getDateKey(value: string) {
+  return value.slice(0, 10);
+}
+
+function dayAfter(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + 1);
+  return toDateInputValue(date);
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof AxiosError) {
     const message = error.response?.data?.message;
@@ -357,8 +369,16 @@ function getUnifiedStatus(
     return "OFF";
   }
 
-  if (schedule?.dayType === "HOLIDAY") {
-    return "HOLIDAY";
+  if (schedule?.dayType === "MONTHLY_OFF") {
+    return "MONTHLY_OFF";
+  }
+
+  if (schedule?.dayType === "EXTRA_OFF") {
+    return "EXTRA_OFF";
+  }
+
+  if (schedule?.dayType === "SPECIAL_OFF") {
+    return "SPECIAL_OFF";
   }
 
   if (schedule?.dayType === "LEAVE") {
@@ -389,6 +409,8 @@ function getDayTypeLabel(dayType: ShiftScheduleDayType) {
     WORKDAY: "WORKDAY",
     OFF: "OFF",
     MONTHLY_OFF: "MONTHLY_OFF",
+    EXTRA_OFF: "EXTRA_OFF",
+    SPECIAL_OFF: "SPECIAL_OFF",
     HOLIDAY: "HOLIDAY",
     LEAVE: "LEAVE",
     ROTATION_OFF: "ROTATION_OFF",
@@ -414,6 +436,8 @@ function DayTypeBadge({ dayType }: { dayType: ShiftScheduleDayType }) {
     WORKDAY: "bg-emerald-100 text-emerald-900 hover:bg-emerald-100",
     OFF: "bg-slate-100 text-slate-700 hover:bg-slate-100",
     MONTHLY_OFF: "bg-slate-200 text-slate-800 hover:bg-slate-200",
+    EXTRA_OFF: "bg-amber-100 text-amber-900 hover:bg-amber-100",
+    SPECIAL_OFF: "bg-cyan-100 text-cyan-900 hover:bg-cyan-100",
     HOLIDAY: "bg-sky-100 text-sky-900 hover:bg-sky-100",
     LEAVE: "bg-violet-100 text-violet-900 hover:bg-violet-100",
     ROTATION_OFF: "bg-orange-100 text-orange-900 hover:bg-orange-100",
@@ -437,7 +461,9 @@ function SourceBadge({ source }: { source?: ShiftScheduleSource }) {
 function StatusBadge({ status }: { status: ScheduleAttendanceRow["status"] }) {
   const classNameByStatus = {
     OFF: "bg-slate-100 text-slate-700 hover:bg-slate-100",
-    HOLIDAY: "bg-sky-100 text-sky-900 hover:bg-sky-100",
+    MONTHLY_OFF: "bg-slate-200 text-slate-800 hover:bg-slate-200",
+    EXTRA_OFF: "bg-amber-100 text-amber-900 hover:bg-amber-100",
+    SPECIAL_OFF: "bg-cyan-100 text-cyan-900 hover:bg-cyan-100",
     LEAVE: "bg-violet-100 text-violet-900 hover:bg-violet-100",
     "Not checked in": "bg-amber-100 text-amber-900 hover:bg-amber-100",
     Working: "bg-blue-100 text-blue-900 hover:bg-blue-100",
@@ -496,6 +522,8 @@ export default function ShiftSchedulePage() {
     rotationOffDate: "",
     reason: "",
   });
+  const scheduleLoadErrorToastRef = useRef("");
+  const offDayOverlayErrorToastRef = useRef("");
 
   const scheduleStartDate = appliedDateRange.startDate;
   const scheduleEndDate = appliedDateRange.endDate;
@@ -590,6 +618,30 @@ export default function ShiftSchedulePage() {
     enabled: canLoadScheduleData,
     queryFn: () =>
       listAttendance({ fromDate: scheduleStartDate, toDate: scheduleEndDate }),
+  });
+
+  const offDaysQuery = useQuery({
+    queryKey: ["off-days", "schedule", { fromDate: scheduleStartDate, toDate: scheduleEndDate }],
+    enabled: canLoadScheduleData,
+    queryFn: () =>
+      listOffDays({
+        status: "APPROVED",
+        fromDate: scheduleStartDate,
+        toDate: scheduleEndDate,
+      }),
+    retry: false,
+  });
+
+  const leavesQuery = useQuery({
+    queryKey: ["leaves", "schedule", { fromDate: scheduleStartDate, toDate: scheduleEndDate }],
+    enabled: canLoadScheduleData,
+    queryFn: () =>
+      listLeaves({
+        status: "APPROVED",
+        fromDate: scheduleStartDate,
+        toDate: scheduleEndDate,
+      }),
+    retry: false,
   });
 
   const checkInMutation = useMutation({
@@ -726,6 +778,20 @@ export default function ShiftSchedulePage() {
       schedulesQuery.isError ||
       attendanceQuery.isError
     ) {
+      const signature = [
+        employeesQuery.isError ? "employees" : "",
+        hasAdditionalEmployeesError ? "employees-extra" : "",
+        departmentsQuery.isError ? "departments" : "",
+        shiftsQuery.isError ? "shifts" : "",
+        schedulesQuery.isError ? "schedules" : "",
+        attendanceQuery.isError ? "attendance" : "",
+      ].join("|");
+
+      if (scheduleLoadErrorToastRef.current === signature) {
+        return;
+      }
+
+      scheduleLoadErrorToastRef.current = signature;
       toast({
         title: "Unable to load schedule and attendance",
         description: "Check your session and backend API.",
@@ -739,6 +805,40 @@ export default function ShiftSchedulePage() {
     hasAdditionalEmployeesError,
     schedulesQuery.isError,
     shiftsQuery.isError,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!offDaysQuery.isError && !leavesQuery.isError) {
+      return;
+    }
+
+    const signature = [
+      offDaysQuery.isError ? "off-days" : "",
+      leavesQuery.isError ? "leaves" : "",
+      scheduleStartDate,
+      scheduleEndDate,
+    ].join("|");
+
+    if (offDayOverlayErrorToastRef.current === signature) {
+      return;
+    }
+
+    offDayOverlayErrorToastRef.current = signature;
+    toast({
+      title: "Off day and leave overlay unavailable",
+      description: getErrorMessage(
+        offDaysQuery.error ?? leavesQuery.error,
+        "Run the latest migration and seed, then refresh this page.",
+      ),
+    });
+  }, [
+    offDaysQuery.error,
+    offDaysQuery.isError,
+    leavesQuery.error,
+    leavesQuery.isError,
+    scheduleEndDate,
+    scheduleStartDate,
     toast,
   ]);
 
@@ -780,6 +880,50 @@ export default function ShiftSchedulePage() {
     return map;
   }, [attendanceQuery.data]);
 
+  const offDayTypesByEmployee = useMemo(() => {
+    const map = new Map<string, Map<string, ShiftScheduleDayType>>();
+
+    for (const offDay of offDaysQuery.data?.data ?? []) {
+      const employeeDates = map.get(offDay.employeeId) ?? new Map<string, ShiftScheduleDayType>();
+      employeeDates.set(getDateKey(offDay.offDate), offDay.type as ShiftScheduleDayType);
+      map.set(offDay.employeeId, employeeDates);
+    }
+
+    return map;
+  }, [offDaysQuery.data]);
+
+  const leaveDatesByEmployee = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+
+    for (const leave of leavesQuery.data ?? []) {
+      const dates = map.get(leave.employeeId) ?? new Set<string>();
+      for (let date = getDateKey(leave.startDate); date <= getDateKey(leave.endDate); date = dayAfter(date)) {
+        dates.add(date);
+      }
+      map.set(leave.employeeId, dates);
+    }
+
+    return map;
+  }, [leavesQuery.data]);
+
+  function resolveRowSchedule(schedule: ShiftSchedule | undefined, employeeId: string, workDate: string) {
+    if (!schedule || schedule.dayType === "ROTATION_OFF") {
+      return schedule;
+    }
+
+    const offDayType = offDayTypesByEmployee.get(employeeId)?.get(workDate);
+
+    if (offDayType) {
+      return { ...schedule, dayType: offDayType };
+    }
+
+    if (leaveDatesByEmployee.get(employeeId)?.has(workDate)) {
+      return { ...schedule, dayType: "LEAVE" as ShiftScheduleDayType };
+    }
+
+    return schedule;
+  }
+
   const rows = useMemo<ScheduleAttendanceRow[]>(() => {
     const allRows = employees.flatMap((employee) =>
       days.map((workDate) => {
@@ -789,7 +933,11 @@ export default function ShiftSchedulePage() {
         const defaultSchedule = persistedSchedule
           ? undefined
           : createDefaultShiftSchedule(employee, workDate);
-        const schedule = persistedSchedule ?? defaultSchedule;
+        const schedule = resolveRowSchedule(
+          persistedSchedule ?? defaultSchedule,
+          employee.id,
+          workDate,
+        );
         const attendance = schedule
           ? attendanceBySchedule.get(schedule.id) ?? attendanceBySchedule.get(getScheduleKey(employee.id, workDate))
           : attendanceBySchedule.get(getScheduleKey(employee.id, workDate));
@@ -821,6 +969,8 @@ export default function ShiftSchedulePage() {
     attendanceStatusFilter,
     days,
     employees,
+    leaveDatesByEmployee,
+    offDayTypesByEmployee,
     schedulesByCell,
     shiftFilterId,
   ]);
@@ -858,7 +1008,9 @@ export default function ShiftSchedulePage() {
     departmentsQuery.isLoading ||
     shiftsQuery.isLoading ||
     schedulesQuery.isLoading ||
-    attendanceQuery.isLoading;
+    attendanceQuery.isLoading ||
+    offDaysQuery.isLoading ||
+    leavesQuery.isLoading;
   function openChangeShiftDialog(row: ScheduleAttendanceRow) {
     setShiftChangeForm({
       employeeId: row.employee.id,
@@ -968,7 +1120,7 @@ export default function ShiftSchedulePage() {
     }
 
     const dayType = getDayType(row.schedule);
-    const cannotEditTimes = dayType === "OFF" || dayType === "ROTATION_OFF";
+    const cannotEditTimes = ["OFF", "ROTATION_OFF", "MONTHLY_OFF", "EXTRA_OFF", "SPECIAL_OFF", "LEAVE"].includes(dayType);
     const payload = {
       checkInAt: !cannotEditTimes && attendanceEditForm.checkInAt
         ? toIsoDateTime(attendanceEditForm.checkInAt)
@@ -1132,7 +1284,9 @@ export default function ShiftSchedulePage() {
                 <option value="Working">Working</option>
                 <option value="Completed">Completed</option>
                 <option value="OFF">OFF</option>
-                <option value="HOLIDAY">HOLIDAY</option>
+                <option value="MONTHLY_OFF">MONTHLY_OFF</option>
+                <option value="EXTRA_OFF">EXTRA_OFF</option>
+                <option value="SPECIAL_OFF">SPECIAL_OFF</option>
                 <option value="LEAVE">LEAVE</option>
               </Select>
             </div>
@@ -1182,7 +1336,7 @@ export default function ShiftSchedulePage() {
                   visibleRows.map((row) => {
                     const shift = row.schedule?.shift;
                     const dayType = getDayType(row.schedule);
-                    const isPunchDisabledDay = ["ROTATION_OFF", "OFF", "HOLIDAY", "LEAVE"].includes(dayType);
+                    const isPunchDisabledDay = ["ROTATION_OFF", "OFF", "MONTHLY_OFF", "EXTRA_OFF", "SPECIAL_OFF", "LEAVE"].includes(dayType);
                     const canCheckIn = Boolean(shift) && !row.attendance && !isPunchDisabledDay;
                     const canCheckOut = Boolean(
                       row.attendance?.checkInAt && !row.attendance?.checkOutAt && !isPunchDisabledDay,
@@ -1558,7 +1712,7 @@ function AttendanceEditDialog({
   onSubmit: () => void;
 }) {
   const dayType = getDayType(row?.schedule);
-  const cannotEditTimes = ["OFF", "ROTATION_OFF", "HOLIDAY", "LEAVE"].includes(dayType);
+  const cannotEditTimes = ["OFF", "ROTATION_OFF", "MONTHLY_OFF", "EXTRA_OFF", "SPECIAL_OFF", "LEAVE"].includes(dayType);
   const checkInTime = form.checkInAt ? new Date(form.checkInAt).getTime() : null;
   const checkOutTime = form.checkOutAt ? new Date(form.checkOutAt).getTime() : null;
   const hasInvalidTimeRange =

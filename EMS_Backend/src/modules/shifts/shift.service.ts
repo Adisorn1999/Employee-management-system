@@ -1,4 +1,4 @@
-import { Prisma, ShiftScheduleDayType, ShiftScheduleSource } from "@prisma/client";
+import { OffDayType, Prisma, ShiftScheduleDayType, ShiftScheduleSource } from "@prisma/client";
 
 import prisma from "../../config/prisma";
 import { httpError } from "../../common/utils/errors";
@@ -21,6 +21,7 @@ type ChangeShiftInput = z.infer<typeof changeShiftSchema>;
 type ListScheduleQuery = z.infer<typeof listScheduleQuerySchema>;
 type ListShiftQuery = z.infer<typeof listShiftQuerySchema>;
 type CreateSwapInput = z.infer<typeof createSwapSchema>;
+type ScheduleWithRelations = Prisma.ShiftScheduleGetPayload<{ include: typeof shiftRepository.scheduleInclude }>;
 
 async function assertEmployeeExists(employeeId: string): Promise<void> {
   const employee = await shiftRepository.findEmployeeById(employeeId);
@@ -40,6 +41,96 @@ async function assertShiftExists(shiftId: string): Promise<void> {
   if (!shift.isActive) {
     throw httpError("Shift is inactive", 400);
   }
+}
+
+function dateKeyFromDbDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function resolveIntegratedDayType(
+  schedule: ScheduleWithRelations,
+  offDayDatesByEmployee: Map<string, Map<string, OffDayType>>,
+  leaveDatesByEmployee: Map<string, Set<string>>,
+) {
+  if (schedule.dayType === ShiftScheduleDayType.ROTATION_OFF) {
+    return schedule;
+  }
+
+  const dateKey = dateKeyFromDbDate(schedule.workDate);
+  const offDayType = offDayDatesByEmployee.get(schedule.employeeId)?.get(dateKey);
+
+  if (offDayType) {
+    return { ...schedule, dayType: offDayType as unknown as ShiftScheduleDayType };
+  }
+
+  if (leaveDatesByEmployee.get(schedule.employeeId)?.has(dateKey)) {
+    return { ...schedule, dayType: ShiftScheduleDayType.LEAVE };
+  }
+
+  return schedule;
+}
+
+async function listApprovedOffDayDateMap(fromDate?: Date, toDate?: Date) {
+  const offDays = await prisma.monthlyOffDay.findMany({
+    where: {
+      status: "APPROVED",
+      ...(fromDate || toDate
+        ? {
+            offDate: {
+              ...(fromDate && { gte: fromDate }),
+              ...(toDate && { lte: toDate }),
+            },
+          }
+        : {}),
+    },
+    select: {
+      employeeId: true,
+      offDate: true,
+      type: true,
+    },
+  });
+  const map = new Map<string, Map<string, OffDayType>>();
+
+  for (const offDay of offDays) {
+    const employeeDates = map.get(offDay.employeeId) ?? new Map<string, OffDayType>();
+    employeeDates.set(dateKeyFromDbDate(offDay.offDate), offDay.type);
+    map.set(offDay.employeeId, employeeDates);
+  }
+
+  return map;
+}
+
+async function listApprovedLeaveDateMap(fromDate?: Date, toDate?: Date) {
+  const leaves = await prisma.leaveRequest.findMany({
+    where: {
+      status: "APPROVED",
+      ...(fromDate && { endDate: { gte: fromDate } }),
+      ...(toDate && { startDate: { lte: toDate } }),
+    },
+    select: {
+      employeeId: true,
+      startDate: true,
+      endDate: true,
+    },
+  });
+  const map = new Map<string, Set<string>>();
+
+  for (const leave of leaves) {
+    const current = new Date(leave.startDate);
+    while (current <= leave.endDate) {
+      const dateKey = dateKeyFromDbDate(current);
+      const employeeDates = map.get(leave.employeeId) ?? new Set<string>();
+      employeeDates.add(dateKey);
+      map.set(leave.employeeId, employeeDates);
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+  }
+
+  return map;
 }
 
 export const shiftService = {
@@ -191,7 +282,7 @@ export const shiftService = {
     });
   },
 
-  listSchedules: (query: ListScheduleQuery) => {
+  listSchedules: async (query: ListScheduleQuery) => {
     const where: Prisma.ShiftScheduleWhereInput = {
       ...(query.employeeId && { employeeId: query.employeeId }),
       ...(query.shiftId && { shiftId: query.shiftId }),
@@ -203,11 +294,15 @@ export const shiftService = {
       }),
     };
 
-    return prisma.shiftSchedule.findMany({
+    const schedules = await prisma.shiftSchedule.findMany({
       where,
       include: shiftRepository.scheduleInclude,
       orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
     });
+    const offDayDatesByEmployee = await listApprovedOffDayDateMap(query.fromDate, query.toDate);
+    const leaveDatesByEmployee = await listApprovedLeaveDateMap(query.fromDate, query.toDate);
+
+    return schedules.map((schedule) => resolveIntegratedDayType(schedule, offDayDatesByEmployee, leaveDatesByEmployee));
   },
 
   listEmployeeSchedules: async (employeeId: string) => {

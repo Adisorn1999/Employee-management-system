@@ -135,7 +135,9 @@ function isCheckInBlockedDay(dayType: ShiftScheduleDayType): boolean {
   return (
     dayType === ShiftScheduleDayType.ROTATION_OFF ||
     dayType === ShiftScheduleDayType.OFF ||
-    dayType === ShiftScheduleDayType.HOLIDAY ||
+    dayType === ShiftScheduleDayType.MONTHLY_OFF ||
+    dayType === ShiftScheduleDayType.EXTRA_OFF ||
+    dayType === ShiftScheduleDayType.SPECIAL_OFF ||
     dayType === ShiftScheduleDayType.LEAVE
   );
 }
@@ -184,9 +186,42 @@ function isAttendanceTimeBlockedDay(dayType: ShiftScheduleDayType): boolean {
   return (
     dayType === ShiftScheduleDayType.ROTATION_OFF ||
     dayType === ShiftScheduleDayType.OFF ||
-    dayType === ShiftScheduleDayType.HOLIDAY ||
+    dayType === ShiftScheduleDayType.MONTHLY_OFF ||
+    dayType === ShiftScheduleDayType.EXTRA_OFF ||
+    dayType === ShiftScheduleDayType.SPECIAL_OFF ||
     dayType === ShiftScheduleDayType.LEAVE
   );
+}
+
+async function resolveExternalBlockedDay(employeeId: string, workDate: Date): Promise<ShiftScheduleDayType | null> {
+  const offDay = await prisma.monthlyOffDay.findFirst({
+    where: {
+      employeeId,
+      status: "APPROVED",
+      offDate: workDate,
+    },
+    select: { type: true },
+  });
+
+  if (offDay) {
+    return offDay.type as unknown as ShiftScheduleDayType;
+  }
+
+  const leave = await prisma.leaveRequest.findFirst({
+    where: {
+      employeeId,
+      status: "APPROVED",
+      startDate: { lte: workDate },
+      endDate: { gte: workDate },
+    },
+    select: { id: true },
+  });
+
+  if (leave) {
+    return ShiftScheduleDayType.LEAVE;
+  }
+
+  return null;
 }
 
 export const attendanceService = {
@@ -213,6 +248,14 @@ export const attendanceService = {
 
     if (todaySchedule && isCheckInBlockedDay(todaySchedule.dayType)) {
       throw httpError(nonWorkingDayMessage(todaySchedule.dayType), 400);
+    }
+
+    if (todaySchedule?.dayType !== ShiftScheduleDayType.ROTATION_OFF) {
+      const externalBlockedDay = await resolveExternalBlockedDay(data.employeeId, targetWorkDate);
+
+      if (externalBlockedDay) {
+        throw httpError(nonWorkingDayMessage(externalBlockedDay), 400);
+      }
     }
 
     if (todaySchedule?.dayType === ShiftScheduleDayType.WORKDAY && !todaySchedule.shift) {

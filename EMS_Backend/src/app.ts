@@ -10,6 +10,8 @@ import authRoutes from "./modules/auth/auth.route";
 import attendanceRoutes from "./modules/attendance/attendance.route";
 import departmentRoutes from "./modules/employees/department.route";
 import employeeRoutes from "./modules/employees/employee.route";
+import leaveRoutes from "./modules/leaves/leave.route";
+import offDayRoutes from "./modules/off-days/off-day.route";
 import positionRoutes from "./modules/employees/position.route";
 import shiftRoutes from "./modules/shifts/shift.route";
 import { errorMiddleware } from "./middleware/error.middleware";
@@ -35,6 +37,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/employees", employeeRoutes);
+app.use("/api/leaves", leaveRoutes);
+app.use("/api/off-days", offDayRoutes);
 app.use("/api/positions", positionRoutes);
 app.use("/api/shifts", shiftRoutes);
 

@@ -30,6 +30,8 @@ const employeeItems = [
 const shiftItems = [
   { href: "/shifts", label: "Shift List", icon: List },
   { href: "/shifts/schedule", label: "Schedule & Attendance", icon: CalendarDays },
+  { href: "/shifts/monthly-off", label: "Monthly Off", icon: CalendarDays },
+  { href: "/shifts/leave-requests", label: "Leave Requests", icon: List },
 ];
 
 export function Sidebar() {

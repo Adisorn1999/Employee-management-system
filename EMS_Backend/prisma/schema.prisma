@@ -39,6 +39,8 @@ enum ShiftScheduleDayType {
   WORKDAY
   OFF
   MONTHLY_OFF
+  EXTRA_OFF
+  SPECIAL_OFF
   HOLIDAY
   LEAVE
   ROTATION_OFF
@@ -50,6 +52,41 @@ enum ShiftScheduleSource {
   MONTHLY_PLAN
   SHIFT_CHANGE
   EMERGENCY_OVERRIDE
+}
+
+enum HolidayType {
+  COMPANY
+  PUBLIC
+  SPECIAL
+}
+
+enum LeaveType {
+  SICK
+  PERSONAL
+  VACATION
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum OffDayType {
+  MONTHLY_OFF
+  EXTRA_OFF
+  ROTATION_OFF
+  SPECIAL_OFF
+}
+
+enum OffDayStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 // ─────────────────────────────────────
@@ -200,6 +237,8 @@ model Employee {
 
   attendances Attendance[]
   payrolls    Payroll[]
+  leaveRequests LeaveRequest[]
+  monthlyOffDays MonthlyOffDay[]
 
   @@index([prefix])
   @@index([departmentId])
@@ -368,16 +407,73 @@ model Holiday {
   id String @id @default(uuid())
 
   name String
-
   date DateTime @db.Date
-
-  multiplier Decimal @db.Decimal(4, 2)
+  type HolidayType @default(PUBLIC)
+  isPaid Boolean @default(true)
+  note String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([date])
+  @@unique([date, name])
   @@index([date])
+  @@index([type])
+}
+
+model LeaveRequest {
+  id String @id @default(uuid())
+
+  employeeId String
+  leaveType LeaveType
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  reason String?
+  status LeaveStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  rejectedBy String?
+  rejectedAt DateTime?
+  rejectReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([startDate, endDate])
+  @@index([status])
+  @@index([approvedBy])
+  @@index([rejectedBy])
+}
+
+model MonthlyOffDay {
+  id String @id @default(uuid())
+
+  employeeId String
+  offDate DateTime @db.Date
+  type OffDayType @default(MONTHLY_OFF)
+  reason String?
+  status OffDayStatus @default(PENDING)
+  isOverQuota Boolean @default(false)
+  approvedBy String?
+  approvedAt DateTime?
+  rejectedBy String?
+  rejectedAt DateTime?
+  rejectReason String?
+  createdBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([offDate])
+  @@index([type])
+  @@index([status])
+  @@index([createdBy])
+  @@index([approvedBy])
 }
 
 // ─────────────────────────────────────

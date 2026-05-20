@@ -67,6 +67,8 @@ export type ShiftScheduleDayType =
   | "WORKDAY"
   | "OFF"
   | "MONTHLY_OFF"
+  | "EXTRA_OFF"
+  | "SPECIAL_OFF"
   | "HOLIDAY"
   | "LEAVE"
   | "ROTATION_OFF";
@@ -113,6 +115,62 @@ export type AttendanceRecord = {
   updatedAt?: string;
   employee?: Employee;
   shiftSchedule?: ShiftSchedule;
+};
+
+export type HolidayType = "COMPANY" | "PUBLIC" | "SPECIAL";
+
+export type Holiday = {
+  id: string;
+  name: string;
+  date: string;
+  type: HolidayType;
+  isPaid: boolean;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type LeaveType = "SICK" | "PERSONAL" | "VACATION" | "UNPAID" | "OTHER";
+export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+export type LeaveRequest = {
+  id: string;
+  employeeId: string;
+  employee?: Employee;
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  reason?: string | null;
+  status: LeaveStatus;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectReason?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type OffDayType = "MONTHLY_OFF" | "EXTRA_OFF" | "ROTATION_OFF" | "SPECIAL_OFF";
+export type OffDayStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+export type MonthlyOffDay = {
+  id: string;
+  employeeId: string;
+  employee?: Employee;
+  offDate: string;
+  type: OffDayType;
+  reason?: string | null;
+  status: OffDayStatus;
+  isOverQuota: boolean;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectReason?: string | null;
+  createdBy: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type EmployeePayload = {
