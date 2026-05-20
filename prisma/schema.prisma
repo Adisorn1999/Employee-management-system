@@ -27,6 +27,14 @@ enum PayrollItemType {
   DEDUCTION
 }
 
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  HALF_DAY
+  OVERTIME
+}
+
 // ─────────────────────────────────────
 // USER
 // ─────────────────────────────────────
@@ -49,7 +57,6 @@ model User {
   schedulesCreated  ShiftSchedule[]    @relation("ScheduleAssignedBy")
   swapHistories     ShiftSwapHistory[] @relation("SwapApprovedBy")
   payrollsProcessed Payroll[]          @relation("PayrollProcessedBy")
-  attendancesMarked Attendance[]       @relation("AttendanceMarkedBy")
 
   @@index([authRoleId])
 }
@@ -252,6 +259,7 @@ model ShiftSchedule {
   assigner User     @relation("ScheduleAssignedBy", fields: [assignedBy], references: [id])
 
   swapHistories ShiftSwapHistory[]
+  attendances   Attendance[]
 
   @@unique([employeeId, workDate])
   @@index([workDate])
@@ -294,29 +302,27 @@ model ShiftSwapHistory {
 model Attendance {
   id String @id @default(uuid())
 
-  employeeId String
-
-  date DateTime @db.Date
-
-  isPresent Boolean @default(true)
-  isAbsent  Boolean @default(false)
-
-  lateMinutes Int @default(0)
-
-  note String?
-
-  markedBy String
+  employeeId       String
+  shiftScheduleId  String
+  checkInAt        DateTime
+  checkOutAt       DateTime?
+  status           AttendanceStatus @default(PRESENT)
+  lateMinutes      Int              @default(0)
+  overtimeMinutes  Int              @default(0)
+  workMinutes      Int              @default(0)
+  note             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftSchedule ShiftSchedule @relation(fields: [shiftScheduleId], references: [id], onDelete: Cascade)
 
-  marker User @relation("AttendanceMarkedBy", fields: [markedBy], references: [id])
-
-  @@unique([employeeId, date])
-  @@index([date])
+  @@unique([shiftScheduleId])
   @@index([employeeId])
+  @@index([shiftScheduleId])
+  @@index([checkInAt])
+  @@index([status])
 }
 
 // ─────────────────────────────────────

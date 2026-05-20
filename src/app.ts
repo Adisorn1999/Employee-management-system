@@ -7,6 +7,7 @@ import helmet from "helmet";
 
 import { env } from "./config/env";
 import authRoutes from "./modules/auth/auth.route";
+import attendanceRoutes from "./modules/attendance/attendance.route";
 import departmentRoutes from "./modules/employees/department.route";
 import employeeRoutes from "./modules/employees/employee.route";
 import positionRoutes from "./modules/employees/position.route";
@@ -31,6 +32,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/attendance", attendanceRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/positions", positionRoutes);
