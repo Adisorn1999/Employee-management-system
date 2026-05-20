@@ -2,10 +2,12 @@ import { api } from "@/lib/api";
 import type {
   DataResponse,
   Department,
+  AttendanceRecord,
   Employee,
   EmployeePayload,
   JobPosition,
   PaginatedResponse,
+  ShiftSchedule,
 } from "@/types/employee";
 
 export type EmployeeListParams = {
@@ -31,6 +33,11 @@ export async function listEmployees(params: EmployeeListParams = {}) {
   return data;
 }
 
+export async function getEmployee(id: string) {
+  const { data } = await api.get<DataResponse<Employee>>(`/employees/${id}`);
+  return data.data;
+}
+
 export async function listDepartments(params: ReferenceListParams = {}) {
   const { data } = await api.get<PaginatedResponse<Department>>("/departments", { params });
   return data;
@@ -53,5 +60,15 @@ export async function updateEmployee(id: string, payload: EmployeePayload) {
 
 export async function deleteEmployee(id: string) {
   const { data } = await api.delete<DataResponse<Employee>>(`/employees/${id}`);
+  return data.data;
+}
+
+export async function listEmployeeAttendance(employeeId: string) {
+  const { data } = await api.get<DataResponse<AttendanceRecord[]>>(`/attendance/${employeeId}`);
+  return data.data;
+}
+
+export async function listEmployeeShiftSchedules(employeeId: string) {
+  const { data } = await api.get<DataResponse<ShiftSchedule[]>>(`/shifts/schedules/${employeeId}`);
   return data.data;
 }

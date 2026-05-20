@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,6 +20,12 @@ function getTelegramLink(telegramUsername?: string | null): string | null {
 }
 
 export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: EmployeeTableProps) {
+  const router = useRouter();
+
+  function openEmployee(employee: Employee) {
+    router.push(`/employees/${employee.id}`);
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -27,7 +34,7 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
           <TableHead>Contact</TableHead>
           <TableHead>Position</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead className="w-28 text-right">Actions</TableHead>
+          <TableHead className="w-40 text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -47,7 +54,18 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
         )}
         {!isLoading &&
           employees.map((employee) => (
-            <TableRow key={employee.id}>
+            <TableRow
+              key={employee.id}
+              className="cursor-pointer"
+              tabIndex={0}
+              onClick={() => openEmployee(employee)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openEmployee(employee);
+                }
+              }}
+            >
               <TableCell>
                 <div className="font-medium">{employee.name}</div>
                 <div className="text-xs text-muted-foreground">
@@ -62,6 +80,7 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
                       href={getTelegramLink(employee.telegramUsername) ?? undefined}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
                     >
                       {employee.telegramUsername}
                     </a>
@@ -81,7 +100,10 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
                 <Badge variant={employee.isActive ? "secondary" : "outline"}>{employee.isActive ? "Active" : "Inactive"}</Badge>
               </TableCell>
               <TableCell className="text-right">
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                  <Button variant="outline" size="icon" aria-label="View employee" onClick={() => openEmployee(employee)}>
+                    <Eye className="h-4 w-4" />
+                  </Button>
                   <Button variant="outline" size="icon" aria-label="Edit employee" onClick={() => onEdit(employee)}>
                     <Pencil className="h-4 w-4" />
                   </Button>

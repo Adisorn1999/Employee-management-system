@@ -42,9 +42,52 @@ export type Employee = {
   mealAllowance?: number | string | null;
   allowance?: number | string | null;
   lateRatePerMin?: number | string | null;
+  employmentType?: string | null;
+  hiredDate?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type Shift = {
+  id: string;
+  code: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  color?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ShiftSchedule = {
+  id: string;
+  employeeId: string;
+  shiftId: string;
+  workDate: string;
+  assignedBy?: string;
+  note?: string | null;
+  createdAt?: string;
+  employee?: Employee;
+  shift?: Shift;
+};
+
+export type AttendanceRecord = {
+  id: string;
+  employeeId: string;
+  shiftScheduleId: string;
+  checkInAt: string;
+  checkOutAt?: string | null;
+  status: string;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  workMinutes: number;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  employee?: Employee;
+  shiftSchedule?: ShiftSchedule;
 };
 
 export type EmployeePayload = {
