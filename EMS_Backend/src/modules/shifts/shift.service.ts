@@ -1,10 +1,11 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, ShiftScheduleDayType, ShiftScheduleSource } from "@prisma/client";
 
 import prisma from "../../config/prisma";
 import { httpError } from "../../common/utils/errors";
 import { shiftRepository } from "./shift.repository";
 import {
   createScheduleSchema,
+  changeShiftSchema,
   createShiftSchema,
   createSwapSchema,
   listScheduleQuerySchema,
@@ -16,6 +17,7 @@ import { z } from "zod";
 type CreateShiftInput = z.infer<typeof createShiftSchema>;
 type UpdateShiftInput = z.infer<typeof updateShiftSchema>;
 type CreateScheduleInput = z.infer<typeof createScheduleSchema>;
+type ChangeShiftInput = z.infer<typeof changeShiftSchema>;
 type ListScheduleQuery = z.infer<typeof listScheduleQuerySchema>;
 type ListShiftQuery = z.infer<typeof listShiftQuerySchema>;
 type CreateSwapInput = z.infer<typeof createSwapSchema>;
@@ -100,9 +102,92 @@ export const shiftService = {
         shiftId: data.shiftId,
         workDate: data.workDate,
         assignedBy,
+        createdBy: assignedBy,
+        dayType: ShiftScheduleDayType.WORKDAY,
+        source: ShiftScheduleSource.MANUAL,
         note: data.note,
       },
       include: shiftRepository.scheduleInclude,
+    });
+  },
+
+  changeShift: async (data: ChangeShiftInput, createdBy: string) => {
+    await assertEmployeeExists(data.employeeId);
+    await assertShiftExists(data.newShiftId);
+
+    const targetDates = [data.effectiveDate];
+    if (data.rotationOffDate) {
+      targetDates.push(data.rotationOffDate);
+    }
+
+    for (const targetDate of targetDates) {
+      const existing = await shiftRepository.findScheduleWithAttendanceForEmployeeDate(data.employeeId, targetDate);
+      if (existing?.attendances.length) {
+        throw httpError("Attendance already exists for the target date", 409);
+      }
+    }
+
+    return prisma.$transaction(async (tx) => {
+      if (data.rotationOffDate) {
+        await tx.shiftSchedule.upsert({
+          where: {
+            employeeId_workDate: {
+              employeeId: data.employeeId,
+              workDate: data.rotationOffDate,
+            },
+          },
+          update: {
+            shiftId: null,
+            dayType: ShiftScheduleDayType.ROTATION_OFF,
+            source: ShiftScheduleSource.SHIFT_CHANGE,
+            reason: data.reason,
+            note: data.reason,
+            createdBy,
+            assignedBy: createdBy,
+          },
+          create: {
+            employeeId: data.employeeId,
+            shiftId: null,
+            workDate: data.rotationOffDate,
+            assignedBy: createdBy,
+            createdBy,
+            dayType: ShiftScheduleDayType.ROTATION_OFF,
+            source: ShiftScheduleSource.SHIFT_CHANGE,
+            reason: data.reason,
+            note: data.reason,
+          },
+        });
+      }
+
+      return tx.shiftSchedule.upsert({
+        where: {
+          employeeId_workDate: {
+            employeeId: data.employeeId,
+            workDate: data.effectiveDate,
+          },
+        },
+        update: {
+          shiftId: data.newShiftId,
+          dayType: ShiftScheduleDayType.WORKDAY,
+          source: ShiftScheduleSource.SHIFT_CHANGE,
+          reason: data.reason,
+          note: data.reason,
+          createdBy,
+          assignedBy: createdBy,
+        },
+        create: {
+          employeeId: data.employeeId,
+          shiftId: data.newShiftId,
+          workDate: data.effectiveDate,
+          assignedBy: createdBy,
+          createdBy,
+          dayType: ShiftScheduleDayType.WORKDAY,
+          source: ShiftScheduleSource.SHIFT_CHANGE,
+          reason: data.reason,
+          note: data.reason,
+        },
+        include: shiftRepository.scheduleInclude,
+      });
     });
   },
 

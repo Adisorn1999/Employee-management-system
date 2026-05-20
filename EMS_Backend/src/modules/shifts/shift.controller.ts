@@ -6,6 +6,7 @@ import { httpError, HttpError } from "../../common/utils/errors";
 import { shiftService } from "./shift.service";
 import {
   createScheduleSchema,
+  changeShiftSchema,
   createShiftSchema,
   createSwapSchema,
   employeeIdParamSchema,
@@ -101,6 +102,17 @@ export const createSchedule: RequestHandler = async (req, res, next) => {
     const schedule = await shiftService.createSchedule(data, requireCurrentUserId(req.user?.id));
 
     res.status(201).json({ data: schedule });
+  } catch (err) {
+    next(handleKnownPrismaError(err));
+  }
+};
+
+export const changeShift: RequestHandler = async (req, res, next) => {
+  try {
+    const data = changeShiftSchema.parse(req.body);
+    const schedule = await shiftService.changeShift(data, requireCurrentUserId(req.user?.id));
+
+    res.status(200).json({ data: schedule });
   } catch (err) {
     next(handleKnownPrismaError(err));
   }

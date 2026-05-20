@@ -1,4 +1,4 @@
-import { AttendanceStatus, Prisma } from "@prisma/client";
+import { AttendanceStatus, Prisma, ShiftScheduleDayType, ShiftScheduleSource } from "@prisma/client";
 import { z } from "zod";
 
 import prisma from "../../config/prisma";
@@ -10,6 +10,7 @@ type CheckInInput = z.infer<typeof checkInSchema>;
 type CheckOutInput = z.infer<typeof checkOutSchema>;
 type ListAttendanceQuery = z.infer<typeof listAttendanceQuerySchema>;
 type ScheduleCandidate = Awaited<ReturnType<typeof attendanceRepository.findSchedulesForEmployeeDates>>[number];
+type EmployeeWithDefaultShift = NonNullable<Awaited<ReturnType<typeof attendanceRepository.findEmployeeById>>>;
 
 function dateKeyFromLocalDay(date: Date): string {
   const year = date.getFullYear();
@@ -44,6 +45,10 @@ function combineWorkDateAndTime(workDate: Date, time: string): Date {
 }
 
 function getScheduleWindow(schedule: Pick<ScheduleCandidate, "workDate" | "shift">): { start: Date; end: Date } {
+  if (!schedule.shift) {
+    throw httpError("Workday schedule has no shift assigned", 400);
+  }
+
   const start = combineWorkDateAndTime(schedule.workDate, schedule.shift.startTime);
   const end = combineWorkDateAndTime(schedule.workDate, schedule.shift.endTime);
 
@@ -60,7 +65,12 @@ function minutesBetween(from: Date, to: Date): number {
 
 function selectScheduleForCheckIn(schedules: ScheduleCandidate[], checkInAt: Date): ScheduleCandidate | null {
   const todayKey = dateKeyFromLocalDay(checkInAt);
-  const availableSchedules = schedules.filter((schedule) => schedule.attendances.length === 0);
+  const availableSchedules = schedules.filter(
+    (schedule) =>
+      schedule.attendances.length === 0 &&
+      schedule.dayType === ShiftScheduleDayType.WORKDAY &&
+      Boolean(schedule.shift),
+  );
 
   const eligible = availableSchedules.filter((schedule) => {
     const { start, end } = getScheduleWindow(schedule);
@@ -75,7 +85,29 @@ function selectScheduleForCheckIn(schedules: ScheduleCandidate[], checkInAt: Dat
   return eligible[0] ?? null;
 }
 
-async function assertEmployeeExists(employeeId: string): Promise<void> {
+function hasRelevantCheckedInSchedule(schedules: ScheduleCandidate[], checkInAt: Date): boolean {
+  const todayKey = dateKeyFromLocalDay(checkInAt);
+
+  return schedules.some((schedule) => {
+    if (schedule.attendances.length === 0) {
+      return false;
+    }
+
+    const isScheduledToday = dateKeyFromDbDate(schedule.workDate) === todayKey;
+    if (isScheduledToday) {
+      return true;
+    }
+
+    if (schedule.dayType !== ShiftScheduleDayType.WORKDAY || !schedule.shift) {
+      return false;
+    }
+
+    const { start, end } = getScheduleWindow(schedule);
+    return checkInAt >= start && checkInAt <= end;
+  });
+}
+
+async function assertEmployeeExists(employeeId: string): Promise<EmployeeWithDefaultShift> {
   const employee = await attendanceRepository.findEmployeeById(employeeId);
 
   if (!employee) {
@@ -85,6 +117,26 @@ async function assertEmployeeExists(employeeId: string): Promise<void> {
   if (!employee.isActive) {
     throw httpError("Employee is inactive", 400);
   }
+
+  return employee;
+}
+
+function nonWorkingDayMessage(dayType: string): string {
+  const label = dayType
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+
+  return `Cannot check in on ${label}`;
+}
+
+function isCheckInBlockedDay(dayType: ShiftScheduleDayType): boolean {
+  return (
+    dayType === ShiftScheduleDayType.ROTATION_OFF ||
+    dayType === ShiftScheduleDayType.OFF ||
+    dayType === ShiftScheduleDayType.HOLIDAY ||
+    dayType === ShiftScheduleDayType.LEAVE
+  );
 }
 
 function resolveStatus(lateMinutes: number, overtimeMinutes: number, workMinutes: number, scheduledMinutes: number) {
@@ -104,23 +156,66 @@ function resolveStatus(lateMinutes: number, overtimeMinutes: number, workMinutes
 }
 
 export const attendanceService = {
-  checkIn: async (data: CheckInInput) => {
+  checkIn: async (data: CheckInInput, createdBy: string) => {
     const checkInAt = data.checkInAt ?? new Date();
 
-    await assertEmployeeExists(data.employeeId);
+    const employee = await assertEmployeeExists(data.employeeId);
 
     const schedules = await attendanceRepository.findSchedulesForEmployeeDates(data.employeeId, [
       dbDateFromLocalDay(checkInAt, -1),
       dbDateFromLocalDay(checkInAt),
     ]);
+    const todayKey = dateKeyFromLocalDay(checkInAt);
+    const todaySchedule = schedules.find((schedule) => dateKeyFromDbDate(schedule.workDate) === todayKey);
+
+    if (todaySchedule && isCheckInBlockedDay(todaySchedule.dayType)) {
+      throw httpError(nonWorkingDayMessage(todaySchedule.dayType), 400);
+    }
+
+    if (todaySchedule?.dayType === ShiftScheduleDayType.WORKDAY && !todaySchedule.shift) {
+      throw httpError("Workday schedule has no shift assigned", 400);
+    }
+
     const schedule = selectScheduleForCheckIn(schedules, checkInAt);
 
     if (!schedule) {
-      if (schedules.some((candidate) => candidate.attendances.length > 0)) {
+      if (hasRelevantCheckedInSchedule(schedules, checkInAt)) {
         throw httpError("Employee has already checked in for the scheduled shift", 409);
       }
 
-      throw httpError("Employee does not have a shift schedule today", 404);
+      if (!todaySchedule && employee.defaultShiftId) {
+        const defaultSchedule = await prisma.shiftSchedule.create({
+          data: {
+            employeeId: data.employeeId,
+            shiftId: employee.defaultShiftId,
+            workDate: dbDateFromLocalDay(checkInAt),
+            assignedBy: createdBy,
+            createdBy,
+            dayType: ShiftScheduleDayType.WORKDAY,
+            source: ShiftScheduleSource.DEFAULT_SHIFT,
+            reason: "Fallback to employee default shift",
+            note: "Fallback to employee default shift",
+          },
+          include: attendanceRepository.scheduleWithAttendanceInclude,
+        });
+
+        const { start } = getScheduleWindow(defaultSchedule);
+        const lateMinutes = minutesBetween(start, checkInAt);
+
+        return prisma.attendance.create({
+          data: {
+            employeeId: data.employeeId,
+            shiftScheduleId: defaultSchedule.id,
+            checkInAt,
+            status: lateMinutes > 0 ? AttendanceStatus.LATE : AttendanceStatus.PRESENT,
+            lateMinutes,
+            note: data.note,
+          },
+          include: attendanceRepository.attendanceInclude,
+        });
+      }
+
+      throw httpError("Employee has no shift assigned", 404);
     }
 
     const { start } = getScheduleWindow(schedule);

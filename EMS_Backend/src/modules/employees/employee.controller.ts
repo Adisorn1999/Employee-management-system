@@ -8,9 +8,15 @@ import { httpError, HttpError } from "../../common/utils/errors";
 const includeEmployeeRelations = {
   department: true,
   jobPosition: true,
+  defaultShift: true,
 } satisfies Prisma.EmployeeInclude;
 
-const moneySchema = z.coerce.number().min(0).optional();
+const MONEY_MAX = 99_999_999.99;
+const moneySchema = z.coerce
+  .number()
+  .min(0)
+  .max(MONEY_MAX, `Amount must be less than or equal to ${MONEY_MAX}`)
+  .optional();
 const optionalRelationIdSchema = z.preprocess(
   (value) => (value === "" ? null : value),
   z.string().uuid().nullable().optional()
@@ -26,6 +32,7 @@ const createEmployeeSchema = z.object({
   position: z.string().trim().max(100).optional(),
   departmentId: optionalRelationIdSchema,
   positionId: optionalRelationIdSchema,
+  defaultShiftId: optionalRelationIdSchema,
   baseSalary: moneySchema,
   mealAllowance: moneySchema,
   allowance: moneySchema,
@@ -100,6 +107,21 @@ async function assertPositionExists(positionId?: string | null, departmentId?: s
   }
 }
 
+async function assertShiftExists(shiftId?: string | null): Promise<void> {
+  if (!shiftId) {
+    return;
+  }
+
+  const shift = await prisma.shift.findUnique({ where: { id: shiftId } });
+  if (!shift) {
+    throw httpError("Default shift not found", 404);
+  }
+
+  if (!shift.isActive) {
+    throw httpError("Default shift is inactive", 400);
+  }
+}
+
 function toEmployeeCreateInput(data: z.infer<typeof createEmployeeSchema>): Prisma.EmployeeCreateInput {
   return {
     prefix: data.prefix,
@@ -116,6 +138,7 @@ function toEmployeeCreateInput(data: z.infer<typeof createEmployeeSchema>): Pris
     isActive: data.isActive,
     department: data.departmentId ? { connect: { id: data.departmentId } } : undefined,
     jobPosition: data.positionId ? { connect: { id: data.positionId } } : undefined,
+    defaultShift: data.defaultShiftId ? { connect: { id: data.defaultShiftId } } : undefined,
   };
 }
 
@@ -144,6 +167,12 @@ function toEmployeeUpdateInput(data: z.infer<typeof updateEmployeeSchema>): Pris
         ? undefined
         : data.positionId
           ? { connect: { id: data.positionId } }
+          : { disconnect: true },
+    defaultShift:
+      data.defaultShiftId === undefined
+        ? undefined
+        : data.defaultShiftId
+          ? { connect: { id: data.defaultShiftId } }
           : { disconnect: true },
   };
 }
@@ -220,6 +249,7 @@ export const createEmployee: RequestHandler = async (req, res, next) => {
 
     await assertDepartmentExists(data.departmentId);
     await assertPositionExists(data.positionId, data.departmentId);
+    await assertShiftExists(data.defaultShiftId);
 
     const employee = await prisma.employee.create({
       data: toEmployeeCreateInput(data),
@@ -230,6 +260,9 @@ export const createEmployee: RequestHandler = async (req, res, next) => {
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return next(httpError("Employee number or email is already in use", 409));
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2020") {
+      return next(httpError(`Compensation fields must be less than or equal to ${MONEY_MAX}`, 400));
     }
     return next(handleZodError(err));
   }
@@ -245,6 +278,7 @@ export const updateEmployee: RequestHandler = async (req, res, next) => {
     }
 
     await assertDepartmentExists(data.departmentId);
+    await assertShiftExists(data.defaultShiftId);
     await assertPositionExists(
       data.positionId,
       data.departmentId === undefined ? existing.departmentId : data.departmentId
@@ -260,6 +294,9 @@ export const updateEmployee: RequestHandler = async (req, res, next) => {
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return next(httpError("Employee number or email is already in use", 409));
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2020") {
+      return next(httpError(`Compensation fields must be less than or equal to ${MONEY_MAX}`, 400));
     }
     return next(handleZodError(err));
   }

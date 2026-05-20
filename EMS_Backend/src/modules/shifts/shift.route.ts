@@ -4,6 +4,7 @@ import { requireAuth } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/role.middleware";
 import {
   createSchedule,
+  changeShift,
   createShift,
   createSwap,
   deleteShift,
@@ -25,6 +26,7 @@ router.get("/schedules", requirePermission("shift.read"), listSchedules);
 router.post("/schedules", requirePermission("shift.create"), createSchedule);
 router.get("/schedules/:employeeId", requirePermission("shift.read"), listEmployeeSchedules);
 
+router.post("/change", requirePermission("shift.update", "shift.change"), changeShift);
 router.post("/swap", requirePermission("shift.swap"), createSwap);
 
 router.get("/:id", requirePermission("shift.read"), getShift);

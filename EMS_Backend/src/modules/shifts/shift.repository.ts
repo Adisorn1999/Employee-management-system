@@ -49,4 +49,16 @@ export const shiftRepository = {
         },
       },
     }),
+  findScheduleWithAttendanceForEmployeeDate: (employeeId: string, workDate: Date) =>
+    prisma.shiftSchedule.findUnique({
+      where: {
+        employeeId_workDate: {
+          employeeId,
+          workDate,
+        },
+      },
+      include: {
+        attendances: true,
+      },
+    }),
 };

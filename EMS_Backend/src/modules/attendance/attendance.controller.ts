@@ -27,10 +27,18 @@ function handleKnownPrismaError(err: unknown): HttpError | unknown {
   return handleZodError(err);
 }
 
+function requireCurrentUserId(userId?: string): string {
+  if (!userId) {
+    throw httpError("Unauthorized", 401);
+  }
+
+  return userId;
+}
+
 export const checkIn: RequestHandler = async (req, res, next) => {
   try {
     const data = checkInSchema.parse(req.body);
-    const attendance = await attendanceService.checkIn(data);
+    const attendance = await attendanceService.checkIn(data, requireCurrentUserId(req.user?.id));
 
     res.status(201).json({ data: attendance });
   } catch (err) {

@@ -15,6 +15,7 @@ export type EmployeeListParams = {
   page?: number;
   limit?: number;
   isActive?: "true" | "false";
+  departmentId?: string;
 };
 
 type ReferenceListParams = {

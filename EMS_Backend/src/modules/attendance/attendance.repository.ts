@@ -20,7 +20,13 @@ export const attendanceRepository = {
   attendanceInclude,
   scheduleWithAttendanceInclude,
 
-  findEmployeeById: (id: string) => prisma.employee.findUnique({ where: { id } }),
+  findEmployeeById: (id: string) =>
+    prisma.employee.findUnique({
+      where: { id },
+      include: {
+        defaultShift: true,
+      },
+    }),
 
   findSchedulesForEmployeeDates: (employeeId: string, dates: Date[]) =>
     prisma.shiftSchedule.findMany({

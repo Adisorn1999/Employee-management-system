@@ -18,10 +18,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { listDepartments, listPositions } from "@/services/employee.service";
-import type { Employee, EmployeePayload } from "@/types/employee";
+import { listShifts } from "@/services/shift.service";
+import type { Employee, EmployeePayload, Shift } from "@/types/employee";
 
 const optionalText = z.string().trim().optional().transform((value) => value || undefined);
-const optionalMoney = z.preprocess((value) => (value === "" || value === null ? undefined : value), z.coerce.number().min(0).optional());
+const MONEY_MAX = 99_999_999.99;
+const optionalMoney = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce
+    .number()
+    .min(0)
+    .max(MONEY_MAX, `Must be ${MONEY_MAX.toLocaleString()} or less`)
+    .optional()
+);
 
 const employeeSchema = z.object({
   prefix: z.string().trim().min(1, "Prefix is required").max(20),
@@ -31,6 +40,7 @@ const employeeSchema = z.object({
   phone: optionalText,
   departmentId: z.string().optional(),
   positionId: z.string().optional(),
+  defaultShiftId: z.string().optional(),
   baseSalary: optionalMoney,
   mealAllowance: optionalMoney,
   allowance: optionalMoney,
@@ -56,6 +66,7 @@ function toDefaultValues(employee?: Employee | null): EmployeeFormValues {
     phone: employee?.phone ?? "",
     departmentId: employee?.departmentId ?? "",
     positionId: employee?.positionId ?? "",
+    defaultShiftId: employee?.defaultShiftId ?? "",
     baseSalary: employee?.baseSalary ? Number(employee.baseSalary) : undefined,
     mealAllowance: employee?.mealAllowance ? Number(employee.mealAllowance) : undefined,
     allowance: employee?.allowance ? Number(employee.allowance) : undefined,
@@ -86,8 +97,15 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
     enabled: open,
   });
 
+  const shiftsQuery = useQuery({
+    queryKey: ["shifts", "employee-form"],
+    queryFn: () => listShifts({ isActive: "true" }),
+    enabled: open,
+  });
+
   const departments = departmentsQuery.data?.data ?? [];
   const positions = positionsQuery.data?.data ?? [];
+  const shifts = shiftsQuery.data ?? [];
   const positionOptions = selectedDepartmentId
     ? positions.filter(
         (position) =>
@@ -121,6 +139,7 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
         ...values,
         departmentId: values.departmentId || null,
         positionId: values.positionId || null,
+        defaultShiftId: values.defaultShiftId || null,
       });
       onOpenChange(false);
     } catch (error) {
@@ -174,27 +193,37 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
                 ))}
               </SelectField>
             </Field>
-            <Field label="Telegram" error={form.formState.errors.telegramUsername?.message}>
-              <Input placeholder="@username" {...form.register("telegramUsername")} />
+            <Field label="Default Shift" error={form.formState.errors.defaultShiftId?.message}>
+              <SelectField {...form.register("defaultShiftId")} disabled={shiftsQuery.isLoading}>
+                <option value="">No default shift</option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {formatShiftOption(shift)}
+                  </option>
+                ))}
+              </SelectField>
             </Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Telegram" error={form.formState.errors.telegramUsername?.message}>
+              <Input placeholder="@username" {...form.register("telegramUsername")} />
+            </Field>
             <Field label="Phone" error={form.formState.errors.phone?.message}>
               <Input {...form.register("phone")} />
             </Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Base salary" error={form.formState.errors.baseSalary?.message}>
-              <Input type="number" min="0" step="0.01" {...form.register("baseSalary")} />
+              <Input type="number" min="0" max={MONEY_MAX} step="0.01" {...form.register("baseSalary")} />
             </Field>
             <Field label="Meal allowance" error={form.formState.errors.mealAllowance?.message}>
-              <Input type="number" min="0" step="0.01" {...form.register("mealAllowance")} />
+              <Input type="number" min="0" max={MONEY_MAX} step="0.01" {...form.register("mealAllowance")} />
             </Field>
             <Field label="Allowance" error={form.formState.errors.allowance?.message}>
-              <Input type="number" min="0" step="0.01" {...form.register("allowance")} />
+              <Input type="number" min="0" max={MONEY_MAX} step="0.01" {...form.register("allowance")} />
             </Field>
             <Field label="Late rate / min" error={form.formState.errors.lateRatePerMin?.message}>
-              <Input type="number" min="0" step="0.01" {...form.register("lateRatePerMin")} />
+              <Input type="number" min="0" max={MONEY_MAX} step="0.01" {...form.register("lateRatePerMin")} />
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -214,6 +243,10 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
       </DialogContent>
     </Dialog>
   );
+}
+
+function formatShiftOption(shift: Shift) {
+  return `${shift.code} - ${shift.name} (${shift.startTime}-${shift.endTime})`;
 }
 
 const SelectField = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(

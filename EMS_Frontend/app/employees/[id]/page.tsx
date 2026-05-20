@@ -15,7 +15,7 @@ import {
   listEmployeeAttendance,
   listEmployeeShiftSchedules,
 } from "@/services/employee.service";
-import type { AttendanceRecord, Employee, ShiftSchedule } from "@/types/employee";
+import type { AttendanceRecord, Employee, Shift, ShiftSchedule } from "@/types/employee";
 
 function getEmployeeCode(employee: Employee) {
   return `${employee.prefix}-${employee.employeeNo}`;
@@ -62,6 +62,10 @@ function formatLabel(value?: string | null) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
+}
+
+function formatShift(shift?: Shift | null) {
+  return shift ? `${shift.code} - ${shift.name} (${shift.startTime}-${shift.endTime})` : "-";
 }
 
 function getTelegramLink(telegramUsername?: string | null) {
@@ -124,6 +128,7 @@ function ProfileTab({ employee }: { employee: Employee }) {
         />
         <DetailField label="Department" value={employee.department?.name || "-"} />
         <DetailField label="Position" value={employee.jobPosition?.name || employee.position || "-"} />
+        <DetailField label="Default Shift" value={formatShift(employee.defaultShift)} />
         <DetailField label="Employment type" value={employee.employmentType || "-"} />
         <DetailField
           label="Status"

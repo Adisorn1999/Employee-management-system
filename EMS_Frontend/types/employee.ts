@@ -38,6 +38,8 @@ export type Employee = {
   positionId?: string | null;
   department?: Department | null;
   jobPosition?: JobPosition | null;
+  defaultShiftId?: string | null;
+  defaultShift?: Shift | null;
   baseSalary?: number | string | null;
   mealAllowance?: number | string | null;
   allowance?: number | string | null;
@@ -51,7 +53,7 @@ export type Employee = {
 
 export type Shift = {
   id: string;
-  code: string;
+  code: "DAY" | "NIGHT";
   name: string;
   startTime: string;
   endTime: string;
@@ -61,16 +63,36 @@ export type Shift = {
   updatedAt?: string;
 };
 
+export type ShiftScheduleDayType =
+  | "WORKDAY"
+  | "OFF"
+  | "MONTHLY_OFF"
+  | "HOLIDAY"
+  | "LEAVE"
+  | "ROTATION_OFF";
+
+export type ShiftScheduleSource =
+  | "DEFAULT_SHIFT"
+  | "MANUAL"
+  | "MONTHLY_PLAN"
+  | "SHIFT_CHANGE"
+  | "EMERGENCY_OVERRIDE";
+
 export type ShiftSchedule = {
   id: string;
   employeeId: string;
-  shiftId: string;
+  shiftId?: string | null;
   workDate: string;
   assignedBy?: string;
   note?: string | null;
+  dayType?: ShiftScheduleDayType;
+  source?: ShiftScheduleSource;
+  reason?: string | null;
+  createdBy?: string | null;
+  approvedBy?: string | null;
   createdAt?: string;
   employee?: Employee;
-  shift?: Shift;
+  shift?: Shift | null;
 };
 
 export type AttendanceRecord = {
@@ -100,6 +122,7 @@ export type EmployeePayload = {
   position?: string;
   departmentId?: string | null;
   positionId?: string | null;
+  defaultShiftId?: string | null;
   baseSalary?: number;
   mealAllowance?: number;
   allowance?: number;

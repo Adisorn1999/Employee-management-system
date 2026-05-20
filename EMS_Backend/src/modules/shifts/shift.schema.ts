@@ -39,6 +39,14 @@ export const createScheduleSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+export const changeShiftSchema = z.object({
+  employeeId: uuidSchema("employeeId"),
+  effectiveDate: dateSchema,
+  newShiftId: uuidSchema("newShiftId"),
+  rotationOffDate: dateSchema.optional(),
+  reason: z.string().trim().min(1, "Reason is required").max(500),
+});
+
 export const listScheduleQuerySchema = z.object({
   employeeId: uuidSchema("employeeId").optional(),
   shiftId: uuidSchema("shiftId").optional(),

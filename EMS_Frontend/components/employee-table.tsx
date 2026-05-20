@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { Employee } from "@/types/employee";
+import type { Employee, Shift } from "@/types/employee";
 
 type EmployeeTableProps = {
   employees: Employee[];
@@ -17,6 +17,10 @@ type EmployeeTableProps = {
 function getTelegramLink(telegramUsername?: string | null): string | null {
   const username = telegramUsername?.replace(/^@/, "");
   return username ? `https://t.me/${encodeURIComponent(username)}` : null;
+}
+
+function formatShift(shift?: Shift | null): string {
+  return shift ? `${shift.code} - ${shift.name} (${shift.startTime}-${shift.endTime})` : "-";
 }
 
 export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: EmployeeTableProps) {
@@ -33,6 +37,7 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
           <TableHead>Employee</TableHead>
           <TableHead>Contact</TableHead>
           <TableHead>Position</TableHead>
+          <TableHead>Default Shift</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className="w-40 text-right">Actions</TableHead>
         </TableRow>
@@ -40,14 +45,14 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
       <TableBody>
         {isLoading && (
           <TableRow>
-            <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
               Loading employees...
             </TableCell>
           </TableRow>
         )}
         {!isLoading && employees.length === 0 && (
           <TableRow>
-            <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
               No employee records found.
             </TableCell>
           </TableRow>
@@ -95,6 +100,14 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
                 <div className="text-xs text-muted-foreground">
                   {employee.departmentId === null ? "No department" : employee.department?.name || "-"}
                 </div>
+              </TableCell>
+              <TableCell>
+                <div className="text-sm">{formatShift(employee.defaultShift)}</div>
+                {employee.defaultShift && (
+                  <div className="text-xs text-muted-foreground">
+                    Fallback only
+                  </div>
+                )}
               </TableCell>
               <TableCell>
                 <Badge variant={employee.isActive ? "secondary" : "outline"}>{employee.isActive ? "Active" : "Inactive"}</Badge>
