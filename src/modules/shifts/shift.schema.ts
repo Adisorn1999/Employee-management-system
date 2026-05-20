@@ -7,12 +7,14 @@ const dateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
   .transform((value) => new Date(`${value}T00:00:00.000Z`));
 
+const uuidSchema = (fieldName: string) => z.string().uuid(`${fieldName} must be a valid UUID`);
+
 export const idParamSchema = z.object({
-  id: z.string().uuid(),
+  id: uuidSchema("id"),
 });
 
 export const employeeIdParamSchema = z.object({
-  employeeId: z.string().uuid(),
+  employeeId: uuidSchema("employeeId"),
 });
 
 export const createShiftSchema = z.object({
@@ -31,22 +33,22 @@ export const listShiftQuerySchema = z.object({
 });
 
 export const createScheduleSchema = z.object({
-  employeeId: z.string().uuid(),
-  shiftId: z.string().uuid(),
+  employeeId: uuidSchema("employeeId"),
+  shiftId: uuidSchema("shiftId"),
   workDate: dateSchema,
   note: z.string().trim().max(500).optional(),
 });
 
 export const listScheduleQuerySchema = z.object({
-  employeeId: z.string().uuid().optional(),
-  shiftId: z.string().uuid().optional(),
+  employeeId: uuidSchema("employeeId").optional(),
+  shiftId: uuidSchema("shiftId").optional(),
   fromDate: dateSchema.optional(),
   toDate: dateSchema.optional(),
 });
 
 export const createSwapSchema = z.object({
-  fromEmployeeId: z.string().uuid(),
-  toEmployeeId: z.string().uuid(),
-  shiftScheduleId: z.string().uuid(),
+  fromEmployeeId: uuidSchema("fromEmployeeId"),
+  toEmployeeId: uuidSchema("toEmployeeId"),
+  shiftScheduleId: uuidSchema("shiftScheduleId"),
   reason: z.string().trim().max(500).optional(),
 });

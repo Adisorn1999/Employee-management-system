@@ -24,6 +24,7 @@ const permissions = [
   { id: "permission_shift_create", name: "shift.create", description: "Create shifts and schedules" },
   { id: "permission_shift_update", name: "shift.update", description: "Update shifts, schedules, and swaps" },
   { id: "permission_shift_delete", name: "shift.delete", description: "Deactivate shifts" },
+  { id: "permission_shift_swap", name: "shift.swap", description: "Swap employee shift schedules" },
   { id: "permission_profile_read", name: "profile.read", description: "Read own profile" },
   { id: "permission_profile_update", name: "profile.update", description: "Update own profile" },
 ];
@@ -43,6 +44,7 @@ const rolePermissions: Record<string, string[]> = {
     "shift.create",
     "shift.update",
     "shift.delete",
+    "shift.swap",
     "profile.read",
     "profile.update",
   ],
@@ -68,6 +70,23 @@ const superAdmin = {
   password: process.env.SUPER_ADMIN_PASSWORD || "ChangeMe123!",
   name: process.env.SUPER_ADMIN_NAME || "Super Admin",
 };
+
+const departments = [
+  { name: "IT", description: "Information technology" },
+  { name: "HR", description: "Human resources" },
+  { name: "Operations", description: "Daily operations" },
+];
+
+const positions = [
+  { name: "Developer", departmentName: "IT", description: "Software development" },
+  { name: "HR Officer", departmentName: "HR", description: "HR administration" },
+  { name: "Shift Manager", departmentName: "Operations", description: "Shift planning and supervision" },
+  { name: "Staff", departmentName: "Operations", description: "Operations staff" },
+];
+
+function seedDate(value: string): Date {
+  return new Date(`${value}T00:00:00.000Z`);
+}
 
 async function main() {
   await prisma.$connect();
@@ -123,7 +142,7 @@ async function main() {
     throw new Error("super_admin role is missing from seed data");
   }
 
-  await prisma.user.upsert({
+  const superAdminUser = await prisma.user.upsert({
     where: { username: superAdmin.username },
     update: {
       passwordHash,
@@ -140,7 +159,120 @@ async function main() {
     },
   });
 
-  await prisma.shift.upsert({
+  const departmentByName = new Map<string, { id: string }>();
+  for (const department of departments) {
+    const record = await prisma.department.upsert({
+      where: { name: department.name },
+      update: {
+        description: department.description,
+        isActive: true,
+      },
+      create: department,
+      select: { id: true },
+    });
+    departmentByName.set(department.name, record);
+  }
+
+  const positionByName = new Map<string, { id: string }>();
+  for (const position of positions) {
+    const department = departmentByName.get(position.departmentName);
+
+    if (!department) {
+      throw new Error(`Missing seeded department: ${position.departmentName}`);
+    }
+
+    const record = await prisma.position.upsert({
+      where: {
+        name_departmentId: {
+          name: position.name,
+          departmentId: department.id,
+        },
+      },
+      update: {
+        description: position.description,
+        isActive: true,
+      },
+      create: {
+        name: position.name,
+        description: position.description,
+        departmentId: department.id,
+      },
+      select: { id: true },
+    });
+    positionByName.set(position.name, record);
+  }
+
+  const seededEmployees = [
+    {
+      prefix: "EMP",
+      employeeNo: "EMP-001",
+      name: "Aung Min",
+      email: "aung.min@example.com",
+      phone: "09111111111",
+      position: "Developer",
+      departmentName: "IT",
+      positionName: "Developer",
+    },
+    {
+      prefix: "EMP",
+      employeeNo: "EMP-002",
+      name: "Hnin Yu",
+      email: "hnin.yu@example.com",
+      phone: "09222222222",
+      position: "HR Officer",
+      departmentName: "HR",
+      positionName: "HR Officer",
+    },
+    {
+      prefix: "EMP",
+      employeeNo: "EMP-003",
+      name: "Ko Thet",
+      email: "ko.thet@example.com",
+      phone: "09333333333",
+      position: "Shift Manager",
+      departmentName: "Operations",
+      positionName: "Shift Manager",
+    },
+  ];
+
+  const employeeByNo = new Map<string, { id: string }>();
+  for (const employee of seededEmployees) {
+    const department = departmentByName.get(employee.departmentName);
+    const position = positionByName.get(employee.positionName);
+
+    if (!department || !position) {
+      throw new Error(`Missing seeded department or position for employee: ${employee.employeeNo}`);
+    }
+
+    const record = await prisma.employee.upsert({
+      where: { employeeNo: employee.employeeNo },
+      update: {
+        prefix: employee.prefix,
+        name: employee.name,
+        email: employee.email,
+        phone: employee.phone,
+        position: employee.position,
+        departmentId: department.id,
+        positionId: position.id,
+        isActive: true,
+      },
+      create: {
+        prefix: employee.prefix,
+        employeeNo: employee.employeeNo,
+        name: employee.name,
+        email: employee.email,
+        phone: employee.phone,
+        position: employee.position,
+        departmentId: department.id,
+        positionId: position.id,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    employeeByNo.set(employee.employeeNo, record);
+  }
+
+  const dayShift = await prisma.shift.upsert({
     where: { code: "DAY" },
     update: {
       name: "Day Shift",
@@ -158,7 +290,7 @@ async function main() {
     },
   });
 
-  await prisma.shift.upsert({
+  const nightShift = await prisma.shift.upsert({
     where: { code: "NIGHT" },
     update: {
       name: "Night Shift",
@@ -176,7 +308,42 @@ async function main() {
     },
   });
 
-  console.log("Seeded auth foundation, shift permissions, super admin, and default shifts.");
+  const schedules = [
+    { employeeNo: "EMP-001", shiftId: dayShift.id, workDate: seedDate("2026-05-20"), note: "Default day shift" },
+    { employeeNo: "EMP-002", shiftId: nightShift.id, workDate: seedDate("2026-05-20"), note: "Default night shift" },
+    { employeeNo: "EMP-003", shiftId: dayShift.id, workDate: seedDate("2026-05-21"), note: "Default manager coverage" },
+  ];
+
+  for (const schedule of schedules) {
+    const employee = employeeByNo.get(schedule.employeeNo);
+
+    if (!employee) {
+      throw new Error(`Missing seeded employee: ${schedule.employeeNo}`);
+    }
+
+    await prisma.shiftSchedule.upsert({
+      where: {
+        employeeId_workDate: {
+          employeeId: employee.id,
+          workDate: schedule.workDate,
+        },
+      },
+      update: {
+        shiftId: schedule.shiftId,
+        assignedBy: superAdminUser.id,
+        note: schedule.note,
+      },
+      create: {
+        employeeId: employee.id,
+        shiftId: schedule.shiftId,
+        workDate: schedule.workDate,
+        assignedBy: superAdminUser.id,
+        note: schedule.note,
+      },
+    });
+  }
+
+  console.log("Seeded RBAC, super admin, departments, positions, employees, shifts, and schedules.");
 }
 
 main()
