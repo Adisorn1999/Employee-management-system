@@ -19,6 +19,7 @@ export const employeeIdParamSchema = z.object({
 
 export const checkInSchema = z.object({
   employeeId: uuidSchema("employeeId"),
+  workDate: dateSchema.optional(),
   checkInAt: optionalTimestampSchema,
   note: z.string().trim().max(500).optional(),
 });

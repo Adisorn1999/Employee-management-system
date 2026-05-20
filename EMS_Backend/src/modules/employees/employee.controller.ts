@@ -81,6 +81,40 @@ function normalizeTelegramUsername(value: string | undefined): string | null | u
   return username.startsWith("@") ? username : `@${username}`;
 }
 
+function buildEmployeeSearchFilter(search?: string): Prisma.EmployeeWhereInput | undefined {
+  const normalizedSearch = search?.trim();
+
+  if (!normalizedSearch) {
+    return undefined;
+  }
+
+  const hyphenParts = normalizedSearch.split("-").map((part) => part.trim()).filter(Boolean);
+  const prefixEmployeeNoFilter =
+    hyphenParts.length >= 2
+      ? {
+          AND: [
+            { prefix: { contains: hyphenParts[0], mode: "insensitive" as const } },
+            { employeeNo: { contains: hyphenParts.slice(1).join("-"), mode: "insensitive" as const } },
+          ],
+        }
+      : undefined;
+
+  return {
+    OR: [
+      { prefix: { contains: normalizedSearch, mode: "insensitive" } },
+      { name: { contains: normalizedSearch, mode: "insensitive" } },
+      { employeeNo: { contains: normalizedSearch, mode: "insensitive" } },
+      { telegramUsername: { contains: normalizedSearch, mode: "insensitive" } },
+      { email: { contains: normalizedSearch, mode: "insensitive" } },
+      { phone: { contains: normalizedSearch, mode: "insensitive" } },
+      { position: { contains: normalizedSearch, mode: "insensitive" } },
+      { department: { name: { contains: normalizedSearch, mode: "insensitive" } } },
+      { jobPosition: { name: { contains: normalizedSearch, mode: "insensitive" } } },
+      ...(prefixEmployeeNoFilter ? [prefixEmployeeNoFilter] : []),
+    ],
+  };
+}
+
 async function assertDepartmentExists(departmentId?: string | null): Promise<void> {
   if (!departmentId) {
     return;
@@ -181,24 +215,14 @@ export const listEmployees: RequestHandler = async (req, res, next) => {
   try {
     const query = listQuerySchema.parse(req.query);
     const skip = (query.page - 1) * query.limit;
+    const searchFilter = buildEmployeeSearchFilter(query.search);
 
     const where: Prisma.EmployeeWhereInput = {
       ...(query.prefix && { prefix: query.prefix }),
       ...(query.departmentId && { departmentId: query.departmentId }),
       ...(query.positionId && { positionId: query.positionId }),
       ...(query.isActive !== undefined && { isActive: query.isActive === "true" }),
-      ...(query.search && {
-        OR: [
-          { name: { contains: query.search, mode: "insensitive" } },
-          { employeeNo: { contains: query.search, mode: "insensitive" } },
-          { telegramUsername: { contains: query.search, mode: "insensitive" } },
-          { email: { contains: query.search, mode: "insensitive" } },
-          { phone: { contains: query.search, mode: "insensitive" } },
-          { position: { contains: query.search, mode: "insensitive" } },
-          { department: { name: { contains: query.search, mode: "insensitive" } } },
-          { jobPosition: { name: { contains: query.search, mode: "insensitive" } } },
-        ],
-      }),
+      ...(searchFilter ?? {}),
     };
 
     const [employees, total] = await prisma.$transaction([

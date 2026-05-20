@@ -158,15 +158,24 @@ function resolveStatus(lateMinutes: number, overtimeMinutes: number, workMinutes
 export const attendanceService = {
   checkIn: async (data: CheckInInput, createdBy: string) => {
     const checkInAt = data.checkInAt ?? new Date();
+    const targetWorkDate = data.workDate ?? dbDateFromLocalDay(checkInAt);
 
     const employee = await assertEmployeeExists(data.employeeId);
+    const existingAttendance = await attendanceRepository.findAttendanceForEmployeeWorkDate(
+      data.employeeId,
+      targetWorkDate,
+    );
 
-    const schedules = await attendanceRepository.findSchedulesForEmployeeDates(data.employeeId, [
-      dbDateFromLocalDay(checkInAt, -1),
-      dbDateFromLocalDay(checkInAt),
-    ]);
-    const todayKey = dateKeyFromLocalDay(checkInAt);
-    const todaySchedule = schedules.find((schedule) => dateKeyFromDbDate(schedule.workDate) === todayKey);
+    if (existingAttendance) {
+      throw httpError("Employee has already checked in for the scheduled shift", 409);
+    }
+
+    const scheduleDates = data.workDate
+      ? [targetWorkDate]
+      : [dbDateFromLocalDay(checkInAt, -1), targetWorkDate];
+    const schedules = await attendanceRepository.findSchedulesForEmployeeDates(data.employeeId, scheduleDates);
+    const targetWorkDateKey = dateKeyFromDbDate(targetWorkDate);
+    const todaySchedule = schedules.find((schedule) => dateKeyFromDbDate(schedule.workDate) === targetWorkDateKey);
 
     if (todaySchedule && isCheckInBlockedDay(todaySchedule.dayType)) {
       throw httpError(nonWorkingDayMessage(todaySchedule.dayType), 400);
@@ -176,10 +185,12 @@ export const attendanceService = {
       throw httpError("Workday schedule has no shift assigned", 400);
     }
 
-    const schedule = selectScheduleForCheckIn(schedules, checkInAt);
+    const schedule = data.workDate
+      ? todaySchedule ?? null
+      : selectScheduleForCheckIn(schedules, checkInAt);
 
     if (!schedule) {
-      if (hasRelevantCheckedInSchedule(schedules, checkInAt)) {
+      if (!data.workDate && hasRelevantCheckedInSchedule(schedules, checkInAt)) {
         throw httpError("Employee has already checked in for the scheduled shift", 409);
       }
 
@@ -188,7 +199,7 @@ export const attendanceService = {
           data: {
             employeeId: data.employeeId,
             shiftId: employee.defaultShiftId,
-            workDate: dbDateFromLocalDay(checkInAt),
+            workDate: targetWorkDate,
             assignedBy: createdBy,
             createdBy,
             dayType: ShiftScheduleDayType.WORKDAY,

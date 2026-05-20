@@ -38,6 +38,17 @@ export const attendanceRepository = {
       orderBy: { workDate: "desc" },
     }),
 
+  findAttendanceForEmployeeWorkDate: (employeeId: string, workDate: Date) =>
+    prisma.attendance.findFirst({
+      where: {
+        employeeId,
+        shiftSchedule: {
+          workDate,
+        },
+      },
+      include: attendanceInclude,
+    }),
+
   findOpenAttendanceByEmployee: (employeeId: string) =>
     prisma.attendance.findFirst({
       where: {
