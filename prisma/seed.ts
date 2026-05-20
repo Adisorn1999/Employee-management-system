@@ -20,6 +20,10 @@ const permissions = [
   { id: "permission_employee_create", name: "employee.create", description: "Create employee records" },
   { id: "permission_employee_update", name: "employee.update", description: "Update employee records" },
   { id: "permission_employee_delete", name: "employee.delete", description: "Deactivate employee records" },
+  { id: "permission_shift_read", name: "shift.read", description: "Read shifts and schedules" },
+  { id: "permission_shift_create", name: "shift.create", description: "Create shifts and schedules" },
+  { id: "permission_shift_update", name: "shift.update", description: "Update shifts, schedules, and swaps" },
+  { id: "permission_shift_delete", name: "shift.delete", description: "Deactivate shifts" },
   { id: "permission_profile_read", name: "profile.read", description: "Read own profile" },
   { id: "permission_profile_update", name: "profile.update", description: "Update own profile" },
 ];
@@ -35,11 +39,27 @@ const rolePermissions: Record<string, string[]> = {
     "employee.create",
     "employee.update",
     "employee.delete",
+    "shift.read",
+    "shift.create",
+    "shift.update",
+    "shift.delete",
     "profile.read",
     "profile.update",
   ],
-  hr: ["users.read", "employee.read", "employee.create", "employee.update", "employee.delete", "profile.read", "profile.update"],
-  manager: ["users.read", "employee.read", "profile.read", "profile.update"],
+  hr: [
+    "users.read",
+    "employee.read",
+    "employee.create",
+    "employee.update",
+    "employee.delete",
+    "shift.read",
+    "shift.create",
+    "shift.update",
+    "shift.delete",
+    "profile.read",
+    "profile.update",
+  ],
+  manager: ["users.read", "employee.read", "shift.read", "profile.read", "profile.update"],
   employee: ["profile.read", "profile.update"],
 };
 
@@ -120,7 +140,43 @@ async function main() {
     },
   });
 
-  console.log("Seeded auth foundation: roles, permissions, role permissions, and super admin.");
+  await prisma.shift.upsert({
+    where: { code: "DAY" },
+    update: {
+      name: "Day Shift",
+      startTime: "08:00",
+      endTime: "20:00",
+      color: "#2563eb",
+      isActive: true,
+    },
+    create: {
+      code: "DAY",
+      name: "Day Shift",
+      startTime: "08:00",
+      endTime: "20:00",
+      color: "#2563eb",
+    },
+  });
+
+  await prisma.shift.upsert({
+    where: { code: "NIGHT" },
+    update: {
+      name: "Night Shift",
+      startTime: "20:00",
+      endTime: "08:00",
+      color: "#7c3aed",
+      isActive: true,
+    },
+    create: {
+      code: "NIGHT",
+      name: "Night Shift",
+      startTime: "20:00",
+      endTime: "08:00",
+      color: "#7c3aed",
+    },
+  });
+
+  console.log("Seeded auth foundation, shift permissions, super admin, and default shifts.");
 }
 
 main()

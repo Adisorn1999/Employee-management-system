@@ -10,6 +10,7 @@ import authRoutes from "./modules/auth/auth.route";
 import departmentRoutes from "./modules/employees/department.route";
 import employeeRoutes from "./modules/employees/employee.route";
 import positionRoutes from "./modules/employees/position.route";
+import shiftRoutes from "./modules/shifts/shift.route";
 import { errorMiddleware } from "./middleware/error.middleware";
 
 const app = express();
@@ -33,6 +34,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/positions", positionRoutes);
+app.use("/api/shifts", shiftRoutes);
 
 app.use(errorMiddleware);
 

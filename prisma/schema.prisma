@@ -46,8 +46,8 @@ model User {
   refreshTokens RefreshToken[]
   authRole      RbacRole?      @relation(fields: [authRoleId], references: [id], onDelete: SetNull)
 
-  schedulesCreated  ShiftSchedule[]    @relation("ScheduleCreatedBy")
-  swapHistories     ShiftSwapHistory[] @relation("SwapManagedBy")
+  schedulesCreated  ShiftSchedule[]    @relation("ScheduleAssignedBy")
+  swapHistories     ShiftSwapHistory[] @relation("SwapApprovedBy")
   payrollsProcessed Payroll[]          @relation("PayrollProcessedBy")
   attendancesMarked Attendance[]       @relation("AttendanceMarkedBy")
 
@@ -210,6 +210,28 @@ model Position {
 }
 
 // ─────────────────────────────────────
+// SHIFT
+// ─────────────────────────────────────
+
+model Shift {
+  id String @id @default(uuid())
+
+  code      String  @unique
+  name      String
+  startTime String
+  endTime   String
+  color     String?
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schedules ShiftSchedule[]
+
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────
 // SHIFT SCHEDULE
 // ─────────────────────────────────────
 
@@ -217,21 +239,25 @@ model ShiftSchedule {
   id String @id @default(uuid())
 
   employeeId String
-  shiftDate  DateTime  @db.Date
-  shiftType  ShiftType
+  shiftId    String
+  workDate   DateTime @db.Date
 
-  createdBy String
+  assignedBy String
+  note       String?
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  assigner User     @relation("ScheduleAssignedBy", fields: [assignedBy], references: [id])
 
-  creator User @relation("ScheduleCreatedBy", fields: [createdBy], references: [id])
+  swapHistories ShiftSwapHistory[]
 
-  @@unique([employeeId, shiftDate])
-  @@index([shiftDate])
+  @@unique([employeeId, workDate])
+  @@index([workDate])
   @@index([employeeId])
+  @@index([shiftId])
+  @@index([assignedBy])
 }
 
 // ─────────────────────────────────────
@@ -241,29 +267,24 @@ model ShiftSchedule {
 model ShiftSwapHistory {
   id String @id @default(uuid())
 
-  fromEmployee String
-  toEmployee   String
+  fromEmployeeId  String
+  toEmployeeId    String
+  shiftScheduleId String
+  approvedBy      String
 
-  shiftDate DateTime @db.Date
-
-  fromShift ShiftType
-  toShift   ShiftType
-
-  managedBy String
-
-  note String?
+  reason String?
 
   createdAt DateTime @default(now())
 
-  employeeFrom Employee @relation("SwapFromEmployee", fields: [fromEmployee], references: [id])
+  fromEmployee Employee      @relation("SwapFromEmployee", fields: [fromEmployeeId], references: [id])
+  toEmployee   Employee      @relation("SwapToEmployee", fields: [toEmployeeId], references: [id])
+  schedule     ShiftSchedule @relation(fields: [shiftScheduleId], references: [id], onDelete: Cascade)
+  approver     User          @relation("SwapApprovedBy", fields: [approvedBy], references: [id])
 
-  employeeTo Employee @relation("SwapToEmployee", fields: [toEmployee], references: [id])
-
-  manager User @relation("SwapManagedBy", fields: [managedBy], references: [id])
-
-  @@index([shiftDate])
-  @@index([fromEmployee])
-  @@index([toEmployee])
+  @@index([fromEmployeeId])
+  @@index([toEmployeeId])
+  @@index([shiftScheduleId])
+  @@index([approvedBy])
 }
 
 // ─────────────────────────────────────
