@@ -14,9 +14,15 @@ export type Department = {
 export type JobPosition = {
   id: string;
   name: string;
+  description?: string | null;
   departmentId?: string | null;
   department?: Department | null;
   isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: {
+    employees: number;
+  };
 };
 
 export type Employee = {
