@@ -19,7 +19,7 @@ export function MobileNav() {
     <nav className="grid grid-cols-4 gap-1 border-b bg-card p-2 md:hidden">
       {navItems.map((item) => {
         const Icon = item.icon;
-        const active = pathname === item.href;
+        const active = item.href === "/employees" ? pathname.startsWith("/employees") : pathname === item.href;
 
         return (
           <Link

@@ -1,19 +1,44 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, CalendarClock, Clock3, LayoutDashboard, Users } from "lucide-react";
+import {
+  BarChart3,
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
+  ChevronDown,
+  Clock3,
+  LayoutDashboard,
+  List,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/employees", label: "Employees", icon: Users },
   { href: "/shifts", label: "Shifts", icon: Clock3 },
   { href: "/attendance", label: "Attendance", icon: CalendarClock },
 ];
 
+const employeeItems = [
+  { href: "/employees", label: "Employee List", icon: List },
+  { href: "/employees/departments", label: "Departments", icon: Building2 },
+  { href: "/employees/positions", label: "Positions", icon: BriefcaseBusiness },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
+  const isEmployeeRoute = pathname.startsWith("/employees");
+  const [employeesOpen, setEmployeesOpen] = useState(isEmployeeRoute);
+
+  useEffect(() => {
+    if (isEmployeeRoute) {
+      setEmployeesOpen(true);
+    }
+  }, [isEmployeeRoute]);
 
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-card md:block">
@@ -24,7 +49,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="space-y-1 p-3">
-        {navItems.map((item) => {
+        {navItems.slice(0, 1).map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
 
@@ -33,7 +58,73 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground",
+                "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                active && "bg-secondary text-foreground"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              "h-10 w-full justify-start gap-3 px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+              isEmployeeRoute && "bg-secondary text-foreground"
+            )}
+            onClick={() => setEmployeesOpen((open) => !open)}
+            aria-expanded={employeesOpen}
+          >
+            <Users className="h-4 w-4" />
+            <span className="flex-1 text-left">Employees</span>
+            <ChevronDown
+              className={cn("h-4 w-4 transition-transform duration-200", employeesOpen && "rotate-180")}
+              aria-hidden="true"
+            />
+          </Button>
+          <div
+            className={cn(
+              "grid transition-all duration-200 ease-in-out",
+              employeesOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="mt-1 space-y-1 pl-6">
+                {employeeItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname === item.href;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                        active && "bg-secondary text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+        {navItems.slice(1).map((item) => {
+          const Icon = item.icon;
+          const active = pathname === item.href;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
                 active && "bg-secondary text-foreground"
               )}
             >
