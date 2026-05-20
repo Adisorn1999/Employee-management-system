@@ -4,10 +4,11 @@ import { z } from "zod";
 import prisma from "../../config/prisma";
 import { httpError } from "../../common/utils/errors";
 import { attendanceRepository } from "./attendance.repository";
-import { checkInSchema, checkOutSchema, listAttendanceQuerySchema } from "./attendance.schema";
+import { checkInSchema, checkOutSchema, listAttendanceQuerySchema, updateAttendanceSchema } from "./attendance.schema";
 
 type CheckInInput = z.infer<typeof checkInSchema>;
 type CheckOutInput = z.infer<typeof checkOutSchema>;
+type UpdateAttendanceInput = z.infer<typeof updateAttendanceSchema>;
 type ListAttendanceQuery = z.infer<typeof listAttendanceQuerySchema>;
 type ScheduleCandidate = Awaited<ReturnType<typeof attendanceRepository.findSchedulesForEmployeeDates>>[number];
 type EmployeeWithDefaultShift = NonNullable<Awaited<ReturnType<typeof attendanceRepository.findEmployeeById>>>;
@@ -280,6 +281,49 @@ export const attendanceService = {
         overtimeMinutes,
         status,
         note: data.note ?? attendance.note,
+      },
+      include: attendanceRepository.attendanceInclude,
+    });
+  },
+
+  update: async (id: string, data: UpdateAttendanceInput, updatedBy: string) => {
+    const attendance = await prisma.attendance.findUnique({
+      where: { id },
+      include: attendanceRepository.attendanceInclude,
+    });
+
+    if (!attendance) {
+      throw httpError("Attendance record not found", 404);
+    }
+
+    const nextCheckInAt = data.checkInAt ?? attendance.checkInAt;
+    const nextCheckOutAt =
+      data.checkOutAt === undefined ? attendance.checkOutAt : data.checkOutAt;
+
+    if (nextCheckOutAt && nextCheckOutAt <= nextCheckInAt) {
+      throw httpError("Check-out time must be after check-in time", 400);
+    }
+
+    const cannotEditTimes =
+      attendance.shiftSchedule.dayType === ShiftScheduleDayType.OFF ||
+      attendance.shiftSchedule.dayType === ShiftScheduleDayType.ROTATION_OFF;
+
+    if (cannotEditTimes && (data.checkInAt !== undefined || data.checkOutAt !== undefined)) {
+      throw httpError("Cannot edit attendance times on off days", 400);
+    }
+
+    return prisma.attendance.update({
+      where: { id },
+      data: {
+        ...(data.checkInAt !== undefined && { checkInAt: data.checkInAt }),
+        ...(data.checkOutAt !== undefined && { checkOutAt: data.checkOutAt }),
+        ...(data.lateMinutes !== undefined && { lateMinutes: data.lateMinutes }),
+        ...(data.overtimeMinutes !== undefined && { overtimeMinutes: data.overtimeMinutes }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.note !== undefined && { note: data.note }),
+        ...(data.adjustmentReason !== undefined && { adjustmentReason: data.adjustmentReason }),
+        updatedBy,
+        workMinutes: nextCheckOutAt ? minutesBetween(nextCheckInAt, nextCheckOutAt) : 0,
       },
       include: attendanceRepository.attendanceInclude,
     });

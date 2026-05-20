@@ -8,7 +8,7 @@ import {
   Eye,
   LogIn,
   LogOut,
-  Plus,
+  Pencil,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -44,17 +44,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuthStore } from "@/lib/auth-store";
 import { useToast } from "@/components/ui/toast";
 import {
   checkIn,
   checkOut,
   listAttendance,
+  updateAttendance,
 } from "@/services/attendance.service";
 import { listDepartments } from "@/services/department.service";
 import { listEmployees } from "@/services/employee.service";
 import {
   changeShift,
-  createShiftSchedule,
   listShiftSchedules,
   listShifts,
 } from "@/services/shift.service";
@@ -87,6 +88,16 @@ type ShiftChangeForm = {
   newShiftId: string;
   rotationOffDate: string;
   reason: string;
+};
+
+type AttendanceEditForm = {
+  checkInAt: string;
+  checkOutAt: string;
+  lateMinutes: string;
+  overtimeMinutes: string;
+  attendanceStatus: "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";
+  note: string;
+  adjustmentReason: string;
 };
 
 function toDateInputValue(date?: Date | string | null) {
@@ -123,6 +134,34 @@ function addDays(value: string, days: number) {
   return toDateInputValue(date);
 }
 
+function getDaysInclusive(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  const days: string[] = [];
+
+  for (
+    const date = new Date(start);
+    date.getTime() <= end.getTime();
+    date.setDate(date.getDate() + 1)
+  ) {
+    days.push(toDateInputValue(date));
+  }
+
+  return days;
+}
+
+function getInclusiveDayCount(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  const diff = end.getTime() - start.getTime();
+
+  return Math.max(1, Math.floor(diff / 86_400_000) + 1);
+}
+
+function isDateBefore(value: string, compareTo: string) {
+  return new Date(`${value}T00:00:00`).getTime() < new Date(`${compareTo}T00:00:00`).getTime();
+}
+
 function formatDay(value: string) {
   if (!isDateInputValue(value)) {
     return "-";
@@ -153,6 +192,24 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+function toDateTimeInputValue(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function toIsoDateTime(value: string) {
+  return new Date(value).toISOString();
+}
+
 function getScheduleKey(employeeId: string, workDate: string) {
   return `${employeeId}:${workDate}`;
 }
@@ -171,11 +228,26 @@ function getErrorMessage(error: unknown, fallback: string) {
     return typeof message === "string" ? message : fallback;
   }
 
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response !== null &&
+    "data" in error.response &&
+    typeof error.response.data === "object" &&
+    error.response.data !== null &&
+    "message" in error.response.data &&
+    typeof error.response.data.message === "string"
+  ) {
+    return error.response.data.message;
+  }
+
   return fallback;
 }
 
 function getEmployeeLabel(employee: Employee) {
-  return `${employee.name} (${employee.employeeNo})`;
+  return `${employee.name} (${employee.prefix}-${employee.employeeNo})`;
 }
 
 function createDefaultShiftSchedule(employee: Employee, workDate: string): ShiftSchedule | undefined {
@@ -300,14 +372,33 @@ function StatusBadge({ status }: { status: ScheduleAttendanceRow["status"] }) {
 export default function ShiftSchedulePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [startDate, setStartDate] = useState(() => getTodayDateInputValue());
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+  const canLoadScheduleData = hasHydrated && Boolean(accessToken);
+  const today = getTodayDateInputValue();
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [appliedDateRange, setAppliedDateRange] = useState({
+    startDate: today,
+    endDate: today,
+  });
   const [departmentId, setDepartmentId] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [shiftFilterId, setShiftFilterId] = useState("");
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState("");
   const [selectedAttendance, setSelectedAttendance] =
     useState<AttendanceRecord | null>(null);
-  const [selectedShiftId, setSelectedShiftId] = useState("");
-  const [note, setNote] = useState("");
+  const [selectedAttendanceRow, setSelectedAttendanceRow] =
+    useState<ScheduleAttendanceRow | null>(null);
+  const [attendanceEditForm, setAttendanceEditForm] = useState<AttendanceEditForm>({
+    checkInAt: "",
+    checkOutAt: "",
+    lateMinutes: "0",
+    overtimeMinutes: "0",
+    attendanceStatus: "PRESENT",
+    note: "",
+    adjustmentReason: "",
+  });
   const [isChangeDialogOpen, setIsChangeDialogOpen] = useState(false);
   const [shiftChangeForm, setShiftChangeForm] = useState<ShiftChangeForm>({
     employeeId: "",
@@ -319,20 +410,39 @@ export default function ShiftSchedulePage() {
     reason: "",
   });
 
-  const scheduleStartDate = isDateInputValue(startDate)
-    ? startDate
-    : getTodayDateInputValue();
+  const scheduleStartDate = appliedDateRange.startDate;
+  const scheduleEndDate = appliedDateRange.endDate;
+  const dateRangeError = useMemo(() => {
+    if (!startDate) {
+      return "Start date is required.";
+    }
+
+    if (!endDate) {
+      return "End date is required.";
+    }
+
+    if (!isDateInputValue(startDate)) {
+      return "Start date is invalid.";
+    }
+
+    if (!isDateInputValue(endDate)) {
+      return "End date is invalid.";
+    }
+
+    if (isDateBefore(endDate, startDate)) {
+      return "End date cannot be before start date.";
+    }
+
+    return "";
+  }, [endDate, startDate]);
   const days = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_item, index) =>
-        addDays(scheduleStartDate, index),
-      ),
-    [scheduleStartDate],
+    () => getDaysInclusive(scheduleStartDate, scheduleEndDate),
+    [scheduleEndDate, scheduleStartDate],
   );
-  const endDate = days[6];
 
   const employeesQuery = useQuery({
     queryKey: ["employees", "shift-schedule", { departmentId, search }],
+    enabled: canLoadScheduleData,
     queryFn: () =>
       listEmployees({
         page: 1,
@@ -345,59 +455,61 @@ export default function ShiftSchedulePage() {
 
   const departmentsQuery = useQuery({
     queryKey: ["departments", "shift-schedule-filter"],
+    enabled: canLoadScheduleData,
     queryFn: () => listDepartments({ page: 1, limit: 100, isActive: "true" }),
   });
 
   const shiftsQuery = useQuery({
     queryKey: ["shifts", "active"],
+    enabled: canLoadScheduleData,
     queryFn: () => listShifts({ isActive: "true" }),
   });
 
   const schedulesQuery = useQuery({
     queryKey: [
       "shift-schedules",
-      { fromDate: scheduleStartDate, toDate: endDate },
+      { fromDate: scheduleStartDate, toDate: scheduleEndDate },
     ],
+    enabled: canLoadScheduleData,
     queryFn: () =>
-      listShiftSchedules({ fromDate: scheduleStartDate, toDate: endDate }),
+      listShiftSchedules({ fromDate: scheduleStartDate, toDate: scheduleEndDate }),
   });
 
   const attendanceQuery = useQuery({
-    queryKey: ["attendance", { fromDate: scheduleStartDate, toDate: endDate }],
+    queryKey: ["attendance", { fromDate: scheduleStartDate, toDate: scheduleEndDate }],
+    enabled: canLoadScheduleData,
     queryFn: () =>
-      listAttendance({ fromDate: scheduleStartDate, toDate: endDate }),
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: createShiftSchedule,
-    onSuccess: (schedule) => {
-      queryClient.invalidateQueries({ queryKey: ["shift-schedules"] });
-      toast({
-        title: "Shift assigned",
-        description: `${schedule.employee?.name ?? "Employee"} is scheduled for ${getScheduleDate(schedule)}.`,
-      });
-      setSelectedCell(null);
-    },
-    onError: (error) => {
-      toast({
-        title:
-          error instanceof AxiosError && error.response?.status === 409
-            ? "Schedule already exists"
-            : "Unable to assign shift",
-        description: getErrorMessage(
-          error,
-          "Check the schedule details and try again.",
-        ),
-        variant: "destructive",
-      });
-    },
+      listAttendance({ fromDate: scheduleStartDate, toDate: scheduleEndDate }),
   });
 
   const checkInMutation = useMutation({
     mutationFn: checkIn,
     onSuccess: (attendance) => {
-      queryClient.invalidateQueries({ queryKey: ["attendance"] });
-      queryClient.invalidateQueries({ queryKey: ["shift-schedules"] });
+      queryClient.setQueriesData<AttendanceRecord[]>(
+        { queryKey: ["attendance"] },
+        (existingAttendances) => {
+          if (!existingAttendances) {
+            return existingAttendances;
+          }
+
+          const attendanceDate = getAttendanceDate(attendance);
+          const updatedAttendances = existingAttendances.filter((existingAttendance) => {
+            const existingAttendanceDate = getAttendanceDate(existingAttendance);
+
+            return (
+              existingAttendance.id !== attendance.id &&
+              existingAttendance.shiftScheduleId !== attendance.shiftScheduleId &&
+              !(
+                attendanceDate &&
+                existingAttendanceDate === attendanceDate &&
+                existingAttendance.employeeId === attendance.employeeId
+              )
+            );
+          });
+
+          return [attendance, ...updatedAttendances];
+        },
+      );
       toast({
         title: "Checked in",
         description: `${attendance.employee?.name ?? "Employee"} is now working.`,
@@ -425,6 +537,38 @@ export default function ShiftSchedulePage() {
       toast({
         title: "Unable to check out",
         description: getErrorMessage(error, "Check the attendance and try again."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateAttendanceMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateAttendance>[1] }) =>
+      updateAttendance(id, payload),
+    onSuccess: (attendance) => {
+      queryClient.setQueriesData<AttendanceRecord[]>(
+        { queryKey: ["attendance"] },
+        (existingAttendances) => {
+          if (!existingAttendances) {
+            return existingAttendances;
+          }
+
+          return existingAttendances.map((existingAttendance) =>
+            existingAttendance.id === attendance.id ? attendance : existingAttendance,
+          );
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      toast({
+        title: "Attendance updated",
+        description: `${attendance.employee?.name ?? "Employee"} attendance was saved.`,
+      });
+      setSelectedAttendanceRow(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "Unable to update attendance",
+        description: getErrorMessage(error, "Check the attendance details and try again."),
         variant: "destructive",
       });
     },
@@ -512,7 +656,7 @@ export default function ShiftSchedulePage() {
   }, [attendanceQuery.data]);
 
   const rows = useMemo<ScheduleAttendanceRow[]>(() => {
-    return employees.flatMap((employee) =>
+    const allRows = employees.flatMap((employee) =>
       days.map((workDate) => {
         const persistedSchedule = schedulesByCell.get(
           getScheduleKey(employee.id, workDate),
@@ -535,7 +679,26 @@ export default function ShiftSchedulePage() {
         };
       }),
     );
-  }, [attendanceBySchedule, days, employees, schedulesByCell]);
+
+    return allRows.filter((row) => {
+      if (shiftFilterId && row.schedule?.shiftId !== shiftFilterId) {
+        return false;
+      }
+
+      if (attendanceStatusFilter && row.status !== attendanceStatusFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    attendanceBySchedule,
+    attendanceStatusFilter,
+    days,
+    employees,
+    schedulesByCell,
+    shiftFilterId,
+  ]);
 
   const isLoading =
     employeesQuery.isLoading ||
@@ -543,17 +706,7 @@ export default function ShiftSchedulePage() {
     shiftsQuery.isLoading ||
     schedulesQuery.isLoading ||
     attendanceQuery.isLoading;
-
-  function openAssignDialog(
-    employee: Employee,
-    workDate: string,
-    schedule?: ShiftSchedule,
-    isVirtualDefaultSchedule = false,
-  ) {
-    setSelectedCell({ employee, workDate, schedule, isVirtualDefaultSchedule });
-    setSelectedShiftId(schedule?.shiftId ?? employee.defaultShiftId ?? shifts[0]?.id ?? "");
-    setNote(isVirtualDefaultSchedule ? "" : schedule?.note ?? "");
-  }
+  const appliedDayCount = getInclusiveDayCount(scheduleStartDate, scheduleEndDate);
 
   function openChangeShiftDialog(row: ScheduleAttendanceRow) {
     setShiftChangeForm({
@@ -568,25 +721,61 @@ export default function ShiftSchedulePage() {
     setIsChangeDialogOpen(true);
   }
 
-  function handleAssign() {
-    if (!selectedCell || !selectedShiftId) {
+  function openEditAttendanceDialog(row: ScheduleAttendanceRow) {
+    if (!row.attendance) {
       return;
     }
 
-    assignMutation.mutate({
-      employeeId: selectedCell.employee.id,
-      shiftId: selectedShiftId,
-      workDate: selectedCell.workDate,
-      note: note.trim() || undefined,
+    setSelectedAttendanceRow(row);
+    setAttendanceEditForm({
+      checkInAt: toDateTimeInputValue(row.attendance.checkInAt),
+      checkOutAt: toDateTimeInputValue(row.attendance.checkOutAt),
+      lateMinutes: String(row.attendance.lateMinutes ?? 0),
+      overtimeMinutes: String(row.attendance.overtimeMinutes ?? 0),
+      attendanceStatus: row.attendance.status as AttendanceEditForm["attendanceStatus"],
+      note: row.attendance.note ?? "",
+      adjustmentReason: row.attendance.adjustmentReason ?? "",
     });
   }
 
   function handleCheckIn(row: ScheduleAttendanceRow) {
-    checkInMutation.mutate({ employeeId: row.employee.id });
+    checkInMutation.mutate({ employeeId: row.employee.id, workDate: row.workDate });
   }
 
   function handleCheckOut(row: ScheduleAttendanceRow) {
     checkOutMutation.mutate({ employeeId: row.employee.id });
+  }
+
+  function applyDateSearch() {
+    if (dateRangeError) {
+      toast({
+        title: "Invalid date range",
+        description: dateRangeError,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAppliedDateRange({ startDate, endDate });
+  }
+
+  function clearDateSearch() {
+    const todayValue = getTodayDateInputValue();
+    setStartDate(todayValue);
+    setEndDate(todayValue);
+    setAppliedDateRange({ startDate: todayValue, endDate: todayValue });
+  }
+
+  function moveAppliedDateRange(daysToMove: number) {
+    const nextStartDate = addDays(scheduleStartDate, daysToMove);
+    const nextEndDate = addDays(scheduleEndDate, daysToMove);
+
+    setStartDate(nextStartDate);
+    setEndDate(nextEndDate);
+    setAppliedDateRange({
+      startDate: nextStartDate,
+      endDate: nextEndDate,
+    });
   }
 
   function handleChangeShift() {
@@ -608,6 +797,34 @@ export default function ShiftSchedulePage() {
     });
   }
 
+  function handleUpdateAttendance() {
+    const row = selectedAttendanceRow;
+    const attendance = row?.attendance;
+    if (!attendance) {
+      return;
+    }
+
+    const dayType = getDayType(row.schedule);
+    const cannotEditTimes = dayType === "OFF" || dayType === "ROTATION_OFF";
+    const payload = {
+      checkInAt: !cannotEditTimes && attendanceEditForm.checkInAt
+        ? toIsoDateTime(attendanceEditForm.checkInAt)
+        : undefined,
+      checkOutAt: !cannotEditTimes && attendanceEditForm.checkOutAt
+        ? toIsoDateTime(attendanceEditForm.checkOutAt)
+        : cannotEditTimes
+          ? undefined
+          : null,
+      lateMinutes: Number(attendanceEditForm.lateMinutes || 0),
+      overtimeMinutes: Number(attendanceEditForm.overtimeMinutes || 0),
+      status: attendanceEditForm.attendanceStatus,
+      note: attendanceEditForm.note.trim() || null,
+      adjustmentReason: attendanceEditForm.adjustmentReason.trim() || null,
+    };
+
+    updateAttendanceMutation.mutate({ id: attendance.id, payload });
+  }
+
   return (
     <DashboardShell>
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -624,16 +841,16 @@ export default function ShiftSchedulePage() {
           <Button
             variant="outline"
             size="icon"
-            aria-label="Previous 7 days"
-            onClick={() => setStartDate(addDays(scheduleStartDate, -7))}
+            aria-label="Previous date range"
+            onClick={() => moveAppliedDateRange(-appliedDayCount)}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            aria-label="Next 7 days"
-            onClick={() => setStartDate(addDays(scheduleStartDate, 7))}
+            aria-label="Next date range"
+            onClick={() => moveAppliedDateRange(appliedDayCount)}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -646,7 +863,7 @@ export default function ShiftSchedulePage() {
             <div>
               <CardTitle>Unified schedule table</CardTitle>
               <CardDescription>
-                {formatDay(scheduleStartDate)} - {formatDay(endDate)}
+                {formatDay(scheduleStartDate)} - {formatDay(scheduleEndDate)}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -656,7 +873,7 @@ export default function ShiftSchedulePage() {
               </span>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-[180px_220px_minmax(220px,1fr)]">
+          <div className="grid gap-3 md:grid-cols-[180px_180px_auto]">
             <div>
               <Label htmlFor="schedule-start-date">Start date</Label>
               <Input
@@ -664,9 +881,47 @@ export default function ShiftSchedulePage() {
                 className="mt-2"
                 type="date"
                 value={startDate}
+                required
                 onChange={(event) => setStartDate(event.target.value)}
               />
             </div>
+            <div>
+              <Label htmlFor="schedule-end-date">End date</Label>
+              <Input
+                id="schedule-end-date"
+                className="mt-2"
+                type="date"
+                value={endDate}
+                required
+                onChange={(event) => setEndDate(event.target.value)}
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <Button
+                type="button"
+                className="mt-2"
+                disabled={Boolean(dateRangeError)}
+                onClick={applyDateSearch}
+              >
+                <Search className="mr-2 h-4 w-4" />
+                Search
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2"
+                onClick={clearDateSearch}
+              >
+                Clear
+              </Button>
+            </div>
+            {dateRangeError && (
+              <p className="text-sm text-destructive md:col-span-3">
+                {dateRangeError}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-[220px_minmax(220px,1fr)_180px_220px]">
             <div>
               <Label htmlFor="department-filter">Department</Label>
               <Select
@@ -690,11 +945,44 @@ export default function ShiftSchedulePage() {
                 <Input
                   id="employee-search"
                   className="pl-9"
-                  placeholder="Search by name or code"
+                  placeholder="ค้นหา Prefix, รหัสพนักงาน หรือชื่อ"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
+            </div>
+            <div>
+              <Label htmlFor="shift-filter">Shift</Label>
+              <Select
+                id="shift-filter"
+                className="mt-2"
+                value={shiftFilterId}
+                onChange={(event) => setShiftFilterId(event.target.value)}
+              >
+                <option value="">All shifts</option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.code} - {shift.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="attendance-status-filter">Attendance status</Label>
+              <Select
+                id="attendance-status-filter"
+                className="mt-2"
+                value={attendanceStatusFilter}
+                onChange={(event) => setAttendanceStatusFilter(event.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="Not checked in">Not checked in</option>
+                <option value="Working">Working</option>
+                <option value="Completed">Completed</option>
+                <option value="OFF">OFF</option>
+                <option value="HOLIDAY">HOLIDAY</option>
+                <option value="LEAVE">LEAVE</option>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -728,7 +1016,7 @@ export default function ShiftSchedulePage() {
                     </TableCell>
                   </TableRow>
                 )}
-                {!isLoading && employees.length === 0 && (
+                {!isLoading && rows.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={12}
@@ -839,17 +1127,11 @@ export default function ShiftSchedulePage() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                openAssignDialog(
-                                  row.employee,
-                                  row.workDate,
-                                  row.schedule,
-                                  row.isVirtualDefaultSchedule,
-                                )
-                              }
+                              disabled={!row.attendance}
+                              onClick={() => openEditAttendanceDialog(row)}
                             >
-                              <Plus className="mr-2 h-4 w-4" />
-                              Assign
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit Attendance
                             </Button>
                             <Button
                               type="button"
@@ -894,23 +1176,6 @@ export default function ShiftSchedulePage() {
         </CardContent>
       </Card>
 
-      <AssignShiftDialog
-        open={Boolean(selectedCell)}
-        selectedCell={selectedCell}
-        shifts={shifts}
-        selectedShiftId={selectedShiftId}
-        note={note}
-        isSaving={assignMutation.isPending}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedCell(null);
-          }
-        }}
-        onShiftChange={setSelectedShiftId}
-        onNoteChange={setNote}
-        onSubmit={handleAssign}
-      />
-
       <ChangeShiftDialog
         open={isChangeDialogOpen}
         shifts={shifts}
@@ -919,6 +1184,19 @@ export default function ShiftSchedulePage() {
         onOpenChange={setIsChangeDialogOpen}
         onFormChange={setShiftChangeForm}
         onSubmit={handleChangeShift}
+      />
+
+      <AttendanceEditDialog
+        row={selectedAttendanceRow}
+        form={attendanceEditForm}
+        isSaving={updateAttendanceMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedAttendanceRow(null);
+          }
+        }}
+        onFormChange={setAttendanceEditForm}
+        onSubmit={handleUpdateAttendance}
       />
 
       <AttendanceDialog
@@ -1063,76 +1341,161 @@ function ChangeShiftDialog({
   );
 }
 
-function AssignShiftDialog({
-  open,
-  selectedCell,
-  shifts,
-  selectedShiftId,
-  note,
+function AttendanceEditDialog({
+  row,
+  form,
   isSaving,
   onOpenChange,
-  onShiftChange,
-  onNoteChange,
+  onFormChange,
   onSubmit,
 }: {
-  open: boolean;
-  selectedCell: SelectedCell | null;
-  shifts: Shift[];
-  selectedShiftId: string;
-  note: string;
+  row: ScheduleAttendanceRow | null;
+  form: AttendanceEditForm;
   isSaving: boolean;
   onOpenChange: (open: boolean) => void;
-  onShiftChange: (shiftId: string) => void;
-  onNoteChange: (note: string) => void;
+  onFormChange: (form: AttendanceEditForm) => void;
   onSubmit: () => void;
 }) {
-  const hasExistingSchedule = Boolean(selectedCell?.schedule) && !selectedCell?.isVirtualDefaultSchedule;
+  const dayType = getDayType(row?.schedule);
+  const cannotEditTimes = dayType === "OFF" || dayType === "ROTATION_OFF";
+  const checkInTime = form.checkInAt ? new Date(form.checkInAt).getTime() : null;
+  const checkOutTime = form.checkOutAt ? new Date(form.checkOutAt).getTime() : null;
+  const hasInvalidTimeRange =
+    checkInTime !== null &&
+    checkOutTime !== null &&
+    !Number.isNaN(checkInTime) &&
+    !Number.isNaN(checkOutTime) &&
+    checkOutTime <= checkInTime;
+  const hasInvalidMinutes =
+    Number(form.lateMinutes) < 0 ||
+    Number(form.overtimeMinutes) < 0 ||
+    !Number.isInteger(Number(form.lateMinutes)) ||
+    !Number.isInteger(Number(form.overtimeMinutes));
+  const canSubmit =
+    Boolean(row?.attendance) &&
+    Boolean(form.attendanceStatus) &&
+    !hasInvalidTimeRange &&
+    !hasInvalidMinutes;
+
+  function updateField<Key extends keyof AttendanceEditForm>(
+    key: Key,
+    value: AttendanceEditForm[Key],
+  ) {
+    onFormChange({ ...form, [key]: value });
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={Boolean(row)} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign shift</DialogTitle>
+          <DialogTitle>Edit Attendance</DialogTitle>
           <DialogDescription>
-            {selectedCell
-              ? `${getEmployeeLabel(selectedCell.employee)} - ${formatDay(selectedCell.workDate)}`
-              : "Select a shift."}
+            {row
+              ? `${getEmployeeLabel(row.employee)} - ${formatDay(row.workDate)}`
+              : "Attendance record"}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-5">
-          {hasExistingSchedule && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              This employee already has a schedule for this date. Submitting
-              again may be rejected by the backend.
+        <div className="grid gap-4">
+          {cannotEditTimes && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Times are locked for {dayType} days. Status, minutes, and notes can still be adjusted.
             </div>
           )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="attendance-check-in">Check in at</Label>
+              <Input
+                id="attendance-check-in"
+                className="mt-2"
+                type="datetime-local"
+                value={form.checkInAt}
+                disabled={cannotEditTimes}
+                onChange={(event) => updateField("checkInAt", event.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="attendance-check-out">Check out at</Label>
+              <Input
+                id="attendance-check-out"
+                className="mt-2"
+                type="datetime-local"
+                value={form.checkOutAt}
+                disabled={cannotEditTimes}
+                onChange={(event) => updateField("checkOutAt", event.target.value)}
+              />
+            </div>
+          </div>
+          {hasInvalidTimeRange && (
+            <p className="text-sm text-destructive">
+              Check-out time must be after check-in time.
+            </p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="attendance-late-minutes">Late minutes</Label>
+              <Input
+                id="attendance-late-minutes"
+                className="mt-2"
+                type="number"
+                min={0}
+                step={1}
+                value={form.lateMinutes}
+                onChange={(event) => updateField("lateMinutes", event.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="attendance-overtime-minutes">Overtime minutes</Label>
+              <Input
+                id="attendance-overtime-minutes"
+                className="mt-2"
+                type="number"
+                min={0}
+                step={1}
+                value={form.overtimeMinutes}
+                onChange={(event) => updateField("overtimeMinutes", event.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="attendance-status">Attendance status</Label>
+              <Select
+                id="attendance-status"
+                className="mt-2"
+                value={form.attendanceStatus}
+                onChange={(event) =>
+                  updateField("attendanceStatus", event.target.value as AttendanceEditForm["attendanceStatus"])
+                }
+              >
+                <option value="PRESENT">PRESENT</option>
+                <option value="LATE">LATE</option>
+                <option value="ABSENT">ABSENT</option>
+                <option value="HALF_DAY">HALF_DAY</option>
+                <option value="OVERTIME">OVERTIME</option>
+              </Select>
+            </div>
+          </div>
+          {hasInvalidMinutes && (
+            <p className="text-sm text-destructive">
+              Late and overtime minutes must be whole numbers of 0 or more.
+            </p>
+          )}
           <div>
-            <Label htmlFor="shift-select">Shift</Label>
-            <Select
-              id="shift-select"
+            <Label htmlFor="attendance-note">Note</Label>
+            <Textarea
+              id="attendance-note"
               className="mt-2"
-              value={selectedShiftId}
-              onChange={(event) => onShiftChange(event.target.value)}
-            >
-              {shifts.length === 0 && (
-                <option value="">No active shifts available</option>
-              )}
-              {shifts.map((shift) => (
-                <option key={shift.id} value={shift.id}>
-                  {shift.code} - {shift.name} ({shift.startTime}-{shift.endTime}
-                  )
-                </option>
-              ))}
-            </Select>
+              value={form.note}
+              placeholder="Optional note"
+              onChange={(event) => updateField("note", event.target.value)}
+            />
           </div>
           <div>
-            <Label htmlFor="shift-note">Note</Label>
+            <Label htmlFor="attendance-adjustment-reason">Adjustment reason</Label>
             <Textarea
-              id="shift-note"
+              id="attendance-adjustment-reason"
               className="mt-2"
-              value={note}
-              placeholder="Optional note"
-              onChange={(event) => onNoteChange(event.target.value)}
+              value={form.adjustmentReason}
+              placeholder="Optional reason for audit"
+              onChange={(event) => updateField("adjustmentReason", event.target.value)}
             />
           </div>
         </div>
@@ -1146,10 +1509,10 @@ function AssignShiftDialog({
           </Button>
           <Button
             type="button"
-            disabled={!selectedShiftId || isSaving}
+            disabled={!canSubmit || isSaving}
             onClick={onSubmit}
           >
-            {isSaving ? "Saving..." : "Save schedule"}
+            {isSaving ? "Saving..." : "Save attendance"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1189,6 +1552,8 @@ function AttendanceDialog({
           <DetailItem label="Overtime minutes" value={String(attendance?.overtimeMinutes ?? 0)} />
           <DetailItem label="Work minutes" value={String(attendance?.workMinutes ?? 0)} />
           <DetailItem label="Note" value={attendance?.note || "-"} />
+          <DetailItem label="Adjustment reason" value={attendance?.adjustmentReason || "-"} />
+          <DetailItem label="Updated by" value={attendance?.updatedBy || "-"} />
         </div>
         <DialogFooter>
           <Button type="button" onClick={() => onOpenChange(false)}>

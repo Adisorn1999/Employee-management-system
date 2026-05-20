@@ -342,6 +342,8 @@ model Attendance {
   overtimeMinutes  Int              @default(0)
   workMinutes      Int              @default(0)
   note             String?
+  updatedBy        String?
+  adjustmentReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -354,6 +356,7 @@ model Attendance {
   @@index([shiftScheduleId])
   @@index([checkInAt])
   @@index([status])
+  @@index([updatedBy])
 }
 
 // ─────────────────────────────────────

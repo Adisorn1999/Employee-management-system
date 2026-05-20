@@ -10,7 +10,18 @@ export type AttendanceListParams = {
 
 export type AttendancePunchPayload = {
   employeeId: string;
+  workDate?: string;
   note?: string;
+};
+
+export type AttendanceUpdatePayload = {
+  checkInAt?: string;
+  checkOutAt?: string | null;
+  lateMinutes?: number;
+  overtimeMinutes?: number;
+  status?: "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";
+  note?: string | null;
+  adjustmentReason?: string | null;
 };
 
 export async function listAttendance(params: AttendanceListParams = {}) {
@@ -32,6 +43,14 @@ export async function checkIn(payload: AttendancePunchPayload) {
 export async function checkOut(payload: AttendancePunchPayload) {
   const { data } = await api.post<DataResponse<AttendanceRecord>>(
     "/attendance/check-out",
+    payload,
+  );
+  return data.data;
+}
+
+export async function updateAttendance(id: string, payload: AttendanceUpdatePayload) {
+  const { data } = await api.patch<DataResponse<AttendanceRecord>>(
+    `/attendance/${id}`,
     payload,
   );
   return data.data;

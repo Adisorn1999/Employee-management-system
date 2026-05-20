@@ -17,6 +17,10 @@ export const employeeIdParamSchema = z.object({
   employeeId: uuidSchema("employeeId"),
 });
 
+export const attendanceIdParamSchema = z.object({
+  id: uuidSchema("id"),
+});
+
 export const checkInSchema = z.object({
   employeeId: uuidSchema("employeeId"),
   workDate: dateSchema.optional(),
@@ -36,3 +40,17 @@ export const listAttendanceQuerySchema = z.object({
   fromDate: dateSchema.optional(),
   toDate: dateSchema.optional(),
 });
+
+export const updateAttendanceSchema = z
+  .object({
+    checkInAt: optionalTimestampSchema,
+    checkOutAt: optionalTimestampSchema.nullable(),
+    lateMinutes: z.coerce.number().int().min(0).optional(),
+    overtimeMinutes: z.coerce.number().int().min(0).optional(),
+    status: z.enum(["PRESENT", "LATE", "ABSENT", "HALF_DAY", "OVERTIME"]).optional(),
+    note: z.string().trim().max(500).nullable().optional(),
+    adjustmentReason: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one attendance field is required",
+  });

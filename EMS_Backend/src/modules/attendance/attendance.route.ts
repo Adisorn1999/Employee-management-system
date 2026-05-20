@@ -8,6 +8,7 @@ import {
   listAttendance,
   listEmployeeAttendance,
   listTodayAttendance,
+  updateAttendance,
 } from "./attendance.controller";
 
 const router = Router();
@@ -16,6 +17,7 @@ router.use(requireAuth);
 
 router.post("/check-in", requirePermission("attendance.create"), checkIn);
 router.post("/check-out", requirePermission("attendance.update"), checkOut);
+router.patch("/:id", requirePermission("attendance.update"), updateAttendance);
 router.get("/", requirePermission("attendance.read"), listAttendance);
 router.get("/today", requirePermission("attendance.read"), listTodayAttendance);
 router.get("/:employeeId", requirePermission("attendance.read"), listEmployeeAttendance);

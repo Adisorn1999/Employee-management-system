@@ -5,10 +5,12 @@ import { ZodError } from "zod";
 import { httpError, HttpError } from "../../common/utils/errors";
 import { attendanceService } from "./attendance.service";
 import {
+  attendanceIdParamSchema,
   checkInSchema,
   checkOutSchema,
   employeeIdParamSchema,
   listAttendanceQuerySchema,
+  updateAttendanceSchema,
 } from "./attendance.schema";
 
 function handleZodError(err: unknown): HttpError | unknown {
@@ -50,6 +52,18 @@ export const checkOut: RequestHandler = async (req, res, next) => {
   try {
     const data = checkOutSchema.parse(req.body);
     const attendance = await attendanceService.checkOut(data);
+
+    res.status(200).json({ data: attendance });
+  } catch (err) {
+    next(handleZodError(err));
+  }
+};
+
+export const updateAttendance: RequestHandler = async (req, res, next) => {
+  try {
+    const params = attendanceIdParamSchema.parse(req.params);
+    const data = updateAttendanceSchema.parse(req.body);
+    const attendance = await attendanceService.update(params.id, data, requireCurrentUserId(req.user?.id));
 
     res.status(200).json({ data: attendance });
   } catch (err) {
