@@ -40,8 +40,8 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_HOST: redis
       REDIS_PORT: 6379
-    expose:
-      - "3001"
+    ports:
+      - "3001:3001"
     command: sh -c "npx prisma migrate deploy && npx prisma db seed && npm start"
     depends_on:
       postgres:
