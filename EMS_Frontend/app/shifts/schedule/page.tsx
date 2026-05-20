@@ -71,6 +71,7 @@ type SelectedCell = {
   employee: Employee;
   workDate: string;
   schedule?: ShiftSchedule;
+  isVirtualDefaultSchedule?: boolean;
 };
 
 type ScheduleAttendanceRow = SelectedCell & {
@@ -173,6 +174,23 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function getEmployeeLabel(employee: Employee) {
   return `${employee.name} (${employee.employeeNo})`;
+}
+
+function createDefaultShiftSchedule(employee: Employee, workDate: string): ShiftSchedule | undefined {
+  if (!employee.defaultShift) {
+    return undefined;
+  }
+
+  return {
+    id: `default:${employee.id}:${workDate}`,
+    employeeId: employee.id,
+    shiftId: employee.defaultShift.id,
+    workDate,
+    dayType: "WORKDAY",
+    source: "DEFAULT_SHIFT",
+    employee,
+    shift: employee.defaultShift,
+  };
 }
 
 function getUnifiedStatus(
@@ -376,6 +394,7 @@ export default function ShiftSchedulePage() {
     mutationFn: checkIn,
     onSuccess: (attendance) => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["shift-schedules"] });
       toast({
         title: "Checked in",
         description: `${attendance.employee?.name ?? "Employee"} is now working.`,
@@ -492,17 +511,22 @@ export default function ShiftSchedulePage() {
   const rows = useMemo<ScheduleAttendanceRow[]>(() => {
     return employees.flatMap((employee) =>
       days.map((workDate) => {
-        const schedule = schedulesByCell.get(
+        const persistedSchedule = schedulesByCell.get(
           getScheduleKey(employee.id, workDate),
         );
+        const defaultSchedule = persistedSchedule
+          ? undefined
+          : createDefaultShiftSchedule(employee, workDate);
+        const schedule = persistedSchedule ?? defaultSchedule;
         const attendance = schedule
-          ? attendanceBySchedule.get(schedule.id)
+          ? attendanceBySchedule.get(schedule.id) ?? attendanceBySchedule.get(getScheduleKey(employee.id, workDate))
           : attendanceBySchedule.get(getScheduleKey(employee.id, workDate));
 
         return {
           employee,
           workDate,
           schedule,
+          isVirtualDefaultSchedule: Boolean(defaultSchedule),
           attendance,
           status: getUnifiedStatus(schedule, attendance),
         };
@@ -521,10 +545,11 @@ export default function ShiftSchedulePage() {
     employee: Employee,
     workDate: string,
     schedule?: ShiftSchedule,
+    isVirtualDefaultSchedule = false,
   ) {
-    setSelectedCell({ employee, workDate, schedule });
-    setSelectedShiftId(schedule?.shiftId ?? shifts[0]?.id ?? "");
-    setNote(schedule?.note ?? "");
+    setSelectedCell({ employee, workDate, schedule, isVirtualDefaultSchedule });
+    setSelectedShiftId(schedule?.shiftId ?? employee.defaultShiftId ?? shifts[0]?.id ?? "");
+    setNote(isVirtualDefaultSchedule ? "" : schedule?.note ?? "");
   }
 
   function openChangeShiftDialog(row?: ScheduleAttendanceRow) {
@@ -822,6 +847,7 @@ export default function ShiftSchedulePage() {
                                   row.employee,
                                   row.workDate,
                                   row.schedule,
+                                  row.isVirtualDefaultSchedule,
                                 )
                               }
                             >
@@ -1062,7 +1088,7 @@ function AssignShiftDialog({
   onNoteChange: (note: string) => void;
   onSubmit: () => void;
 }) {
-  const hasExistingSchedule = Boolean(selectedCell?.schedule);
+  const hasExistingSchedule = Boolean(selectedCell?.schedule) && !selectedCell?.isVirtualDefaultSchedule;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
