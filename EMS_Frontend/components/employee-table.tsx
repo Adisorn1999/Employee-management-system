@@ -13,6 +13,11 @@ type EmployeeTableProps = {
   onDelete: (employee: Employee) => void;
 };
 
+function getTelegramLink(telegramUsername?: string | null): string | null {
+  const username = telegramUsername?.replace(/^@/, "");
+  return username ? `https://t.me/${encodeURIComponent(username)}` : null;
+}
+
 export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: EmployeeTableProps) {
   return (
     <Table>
@@ -50,12 +55,27 @@ export function EmployeeTable({ employees, isLoading, onEdit, onDelete }: Employ
                 </div>
               </TableCell>
               <TableCell>
-                <div>{employee.email || "-"}</div>
+                <div>
+                  {getTelegramLink(employee.telegramUsername) ? (
+                    <a
+                      className="text-primary underline-offset-4 hover:underline"
+                      href={getTelegramLink(employee.telegramUsername) ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {employee.telegramUsername}
+                    </a>
+                  ) : (
+                    "-"
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">{employee.phone || "-"}</div>
               </TableCell>
               <TableCell>
                 <div>{employee.jobPosition?.name || employee.position || "-"}</div>
-                <div className="text-xs text-muted-foreground">{employee.department?.name || "No department"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {employee.departmentId === null ? "No department" : employee.department?.name || "-"}
+                </div>
               </TableCell>
               <TableCell>
                 <Badge variant={employee.isActive ? "secondary" : "outline"}>{employee.isActive ? "Active" : "Inactive"}</Badge>

@@ -1,8 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { useEffect, useState } from "react";
+import { forwardRef, type ReactNode, type SelectHTMLAttributes, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { listDepartments, listPositions } from "@/services/employee.service";
 import type { Employee, EmployeePayload } from "@/types/employee";
 
 const optionalText = z.string().trim().optional().transform((value) => value || undefined);
@@ -25,9 +27,10 @@ const employeeSchema = z.object({
   prefix: z.string().trim().min(1, "Prefix is required").max(20),
   employeeNo: z.string().trim().min(1, "Employee number is required").max(50),
   name: z.string().trim().min(1, "Name is required").max(100),
-  email: optionalText.pipe(z.string().email("Enter a valid email").optional()),
+  telegramUsername: optionalText,
   phone: optionalText,
-  position: optionalText,
+  departmentId: z.string().optional(),
+  positionId: z.string().optional(),
   baseSalary: optionalMoney,
   mealAllowance: optionalMoney,
   allowance: optionalMoney,
@@ -49,9 +52,10 @@ function toDefaultValues(employee?: Employee | null): EmployeeFormValues {
     prefix: employee?.prefix ?? "EMP",
     employeeNo: employee?.employeeNo ?? "",
     name: employee?.name ?? "",
-    email: employee?.email ?? "",
+    telegramUsername: employee?.telegramUsername ?? "",
     phone: employee?.phone ?? "",
-    position: employee?.position ?? "",
+    departmentId: employee?.departmentId ?? "",
+    positionId: employee?.positionId ?? "",
     baseSalary: employee?.baseSalary ? Number(employee.baseSalary) : undefined,
     mealAllowance: employee?.mealAllowance ? Number(employee.mealAllowance) : undefined,
     allowance: employee?.allowance ? Number(employee.allowance) : undefined,
@@ -67,6 +71,29 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
     resolver: zodResolver(employeeSchema),
     defaultValues: toDefaultValues(employee),
   });
+  const selectedDepartmentId = form.watch("departmentId");
+  const selectedPositionId = form.watch("positionId");
+
+  const departmentsQuery = useQuery({
+    queryKey: ["departments", "employee-form"],
+    queryFn: () => listDepartments({ limit: 100 }),
+    enabled: open,
+  });
+
+  const positionsQuery = useQuery({
+    queryKey: ["positions", "employee-form"],
+    queryFn: () => listPositions({ limit: 100 }),
+    enabled: open,
+  });
+
+  const departments = departmentsQuery.data?.data ?? [];
+  const positions = positionsQuery.data?.data ?? [];
+  const positionOptions = selectedDepartmentId
+    ? positions.filter(
+        (position) =>
+          position.id === selectedPositionId || !position.departmentId || position.departmentId === selectedDepartmentId
+      )
+    : positions;
 
   useEffect(() => {
     if (open) {
@@ -75,11 +102,26 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
     }
   }, [employee, form, open]);
 
+  useEffect(() => {
+    if (!selectedDepartmentId || !selectedPositionId) {
+      return;
+    }
+
+    const selectedPosition = positions.find((position) => position.id === selectedPositionId);
+    if (selectedPosition?.departmentId && selectedPosition.departmentId !== selectedDepartmentId) {
+      form.setValue("positionId", "");
+    }
+  }, [form, positions, selectedDepartmentId, selectedPositionId]);
+
   async function handleSubmit(values: EmployeeFormValues) {
     setServerError(null);
 
     try {
-      await onSubmit(values);
+      await onSubmit({
+        ...values,
+        departmentId: values.departmentId || null,
+        positionId: values.positionId || null,
+      });
       onOpenChange(false);
     } catch (error) {
       const message =
@@ -110,14 +152,33 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
             <Field label="Full name" error={form.formState.errors.name?.message}>
               <Input {...form.register("name")} />
             </Field>
-            <Field label="Position" error={form.formState.errors.position?.message}>
-              <Input {...form.register("position")} />
+            <Field label="Department" error={form.formState.errors.departmentId?.message}>
+              <SelectField {...form.register("departmentId")} disabled={departmentsQuery.isLoading}>
+                <option value="">No department</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </SelectField>
             </Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Email" error={form.formState.errors.email?.message}>
-              <Input type="email" {...form.register("email")} />
+            <Field label="Position" error={form.formState.errors.positionId?.message}>
+              <SelectField {...form.register("positionId")} disabled={positionsQuery.isLoading}>
+                <option value="">No position</option>
+                {positionOptions.map((position) => (
+                  <option key={position.id} value={position.id}>
+                    {position.name}
+                  </option>
+                ))}
+              </SelectField>
             </Field>
+            <Field label="Telegram" error={form.formState.errors.telegramUsername?.message}>
+              <Input placeholder="@username" {...form.register("telegramUsername")} />
+            </Field>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Phone" error={form.formState.errors.phone?.message}>
               <Input {...form.register("phone")} />
             </Field>
@@ -155,6 +216,22 @@ export function EmployeeFormDialog({ open, employee, onOpenChange, onSubmit }: E
   );
 }
 
+const SelectField = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
+  ({ className, ...props }, ref) => (
+    <select
+      className={[
+        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      ref={ref}
+      {...props}
+    />
+  )
+);
+SelectField.displayName = "SelectField";
+
 function Field({
   label,
   error,
@@ -164,7 +241,7 @@ function Field({
   label: string;
   error?: string;
   className?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className={className}>

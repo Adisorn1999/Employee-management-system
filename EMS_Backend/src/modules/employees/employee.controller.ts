@@ -11,16 +11,21 @@ const includeEmployeeRelations = {
 } satisfies Prisma.EmployeeInclude;
 
 const moneySchema = z.coerce.number().min(0).optional();
+const optionalRelationIdSchema = z.preprocess(
+  (value) => (value === "" ? null : value),
+  z.string().uuid().nullable().optional()
+);
 
 const createEmployeeSchema = z.object({
   prefix: z.string().trim().min(1).max(20),
   employeeNo: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(100),
   email: z.string().trim().email().max(255).optional(),
+  telegramUsername: z.string().trim().max(255).optional(),
   phone: z.string().trim().max(20).optional(),
   position: z.string().trim().max(100).optional(),
-  departmentId: z.string().uuid().optional(),
-  positionId: z.string().uuid().optional(),
+  departmentId: optionalRelationIdSchema,
+  positionId: optionalRelationIdSchema,
   baseSalary: moneySchema,
   mealAllowance: moneySchema,
   allowance: moneySchema,
@@ -56,7 +61,20 @@ function normalizeNullable(value: string | undefined): string | null | undefined
   return value === undefined ? undefined : value || null;
 }
 
-async function assertDepartmentExists(departmentId?: string): Promise<void> {
+function normalizeTelegramUsername(value: string | undefined): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const username = value.replace(/\s/g, "");
+  if (!username) {
+    return null;
+  }
+
+  return username.startsWith("@") ? username : `@${username}`;
+}
+
+async function assertDepartmentExists(departmentId?: string | null): Promise<void> {
   if (!departmentId) {
     return;
   }
@@ -67,7 +85,7 @@ async function assertDepartmentExists(departmentId?: string): Promise<void> {
   }
 }
 
-async function assertPositionExists(positionId?: string, departmentId?: string): Promise<void> {
+async function assertPositionExists(positionId?: string | null, departmentId?: string | null): Promise<void> {
   if (!positionId) {
     return;
   }
@@ -88,6 +106,7 @@ function toEmployeeCreateInput(data: z.infer<typeof createEmployeeSchema>): Pris
     employeeNo: data.employeeNo,
     name: data.name,
     email: normalizeNullable(data.email),
+    telegramUsername: normalizeTelegramUsername(data.telegramUsername),
     phone: normalizeNullable(data.phone),
     position: normalizeNullable(data.position),
     baseSalary: data.baseSalary,
@@ -106,6 +125,7 @@ function toEmployeeUpdateInput(data: z.infer<typeof updateEmployeeSchema>): Pris
     employeeNo: data.employeeNo,
     name: data.name,
     email: normalizeNullable(data.email),
+    telegramUsername: normalizeTelegramUsername(data.telegramUsername),
     phone: normalizeNullable(data.phone),
     position: normalizeNullable(data.position),
     baseSalary: data.baseSalary,
@@ -142,6 +162,7 @@ export const listEmployees: RequestHandler = async (req, res, next) => {
         OR: [
           { name: { contains: query.search, mode: "insensitive" } },
           { employeeNo: { contains: query.search, mode: "insensitive" } },
+          { telegramUsername: { contains: query.search, mode: "insensitive" } },
           { email: { contains: query.search, mode: "insensitive" } },
           { phone: { contains: query.search, mode: "insensitive" } },
           { position: { contains: query.search, mode: "insensitive" } },
@@ -224,7 +245,10 @@ export const updateEmployee: RequestHandler = async (req, res, next) => {
     }
 
     await assertDepartmentExists(data.departmentId);
-    await assertPositionExists(data.positionId, data.departmentId ?? existing.departmentId ?? undefined);
+    await assertPositionExists(
+      data.positionId,
+      data.departmentId === undefined ? existing.departmentId : data.departmentId
+    );
 
     const employee = await prisma.employee.update({
       where: { id: req.params.id },

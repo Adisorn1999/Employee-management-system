@@ -1,5 +1,12 @@
 import { api } from "@/lib/api";
-import type { DataResponse, Employee, EmployeePayload, PaginatedResponse } from "@/types/employee";
+import type {
+  DataResponse,
+  Department,
+  Employee,
+  EmployeePayload,
+  JobPosition,
+  PaginatedResponse,
+} from "@/types/employee";
 
 export type EmployeeListParams = {
   search?: string;
@@ -8,8 +15,29 @@ export type EmployeeListParams = {
   isActive?: "true" | "false";
 };
 
+type ReferenceListParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  isActive?: "true" | "false";
+};
+
+type PositionListParams = ReferenceListParams & {
+  departmentId?: string;
+};
+
 export async function listEmployees(params: EmployeeListParams = {}) {
   const { data } = await api.get<PaginatedResponse<Employee>>("/employees", { params });
+  return data;
+}
+
+export async function listDepartments(params: ReferenceListParams = {}) {
+  const { data } = await api.get<PaginatedResponse<Department>>("/departments", { params });
+  return data;
+}
+
+export async function listPositions(params: PositionListParams = {}) {
+  const { data } = await api.get<PaginatedResponse<JobPosition>>("/positions", { params });
   return data;
 }
 

@@ -1,11 +1,15 @@
 export type Department = {
   id: string;
   name: string;
+  isActive?: boolean;
 };
 
 export type JobPosition = {
   id: string;
   name: string;
+  departmentId?: string | null;
+  department?: Department | null;
+  isActive?: boolean;
 };
 
 export type Employee = {
@@ -14,6 +18,7 @@ export type Employee = {
   employeeNo: string;
   name: string;
   email?: string | null;
+  telegramUsername?: string | null;
   phone?: string | null;
   position?: string | null;
   departmentId?: string | null;
@@ -34,8 +39,11 @@ export type EmployeePayload = {
   employeeNo: string;
   name: string;
   email?: string;
+  telegramUsername?: string;
   phone?: string;
   position?: string;
+  departmentId?: string | null;
+  positionId?: string | null;
   baseSalary?: number;
   mealAllowance?: number;
   allowance?: number;
