@@ -76,11 +76,13 @@ type SelectedCell = {
 
 type ScheduleAttendanceRow = SelectedCell & {
   attendance?: AttendanceRecord;
-  status: "OFF" | "ROTATION_OFF" | "HOLIDAY" | "LEAVE" | "Not checked in" | "Working" | "Completed";
+  status: "OFF" | "HOLIDAY" | "LEAVE" | "Not checked in" | "Working" | "Completed";
 };
 
 type ShiftChangeForm = {
   employeeId: string;
+  employeeLabel: string;
+  currentWorkDate: string;
   effectiveDate: string;
   newShiftId: string;
   rotationOffDate: string;
@@ -198,7 +200,7 @@ function getUnifiedStatus(
   attendance?: AttendanceRecord,
 ): ScheduleAttendanceRow["status"] {
   if (schedule?.dayType === "ROTATION_OFF") {
-    return "ROTATION_OFF";
+    return "OFF";
   }
 
   if (schedule?.dayType === "HOLIDAY") {
@@ -281,7 +283,6 @@ function SourceBadge({ source }: { source?: ShiftScheduleSource }) {
 function StatusBadge({ status }: { status: ScheduleAttendanceRow["status"] }) {
   const classNameByStatus = {
     OFF: "bg-slate-100 text-slate-700 hover:bg-slate-100",
-    ROTATION_OFF: "bg-orange-100 text-orange-900 hover:bg-orange-100",
     HOLIDAY: "bg-sky-100 text-sky-900 hover:bg-sky-100",
     LEAVE: "bg-violet-100 text-violet-900 hover:bg-violet-100",
     "Not checked in": "bg-amber-100 text-amber-900 hover:bg-amber-100",
@@ -310,6 +311,8 @@ export default function ShiftSchedulePage() {
   const [isChangeDialogOpen, setIsChangeDialogOpen] = useState(false);
   const [shiftChangeForm, setShiftChangeForm] = useState<ShiftChangeForm>({
     employeeId: "",
+    employeeLabel: "",
+    currentWorkDate: getTodayDateInputValue(),
     effectiveDate: getTodayDateInputValue(),
     newShiftId: "",
     rotationOffDate: "",
@@ -552,10 +555,12 @@ export default function ShiftSchedulePage() {
     setNote(isVirtualDefaultSchedule ? "" : schedule?.note ?? "");
   }
 
-  function openChangeShiftDialog(row?: ScheduleAttendanceRow) {
+  function openChangeShiftDialog(row: ScheduleAttendanceRow) {
     setShiftChangeForm({
-      employeeId: row?.employee.id ?? employees[0]?.id ?? "",
-      effectiveDate: row?.workDate ?? scheduleStartDate,
+      employeeId: row.employee.id,
+      employeeLabel: getEmployeeLabel(row.employee),
+      currentWorkDate: row.workDate,
+      effectiveDate: row.workDate,
       newShiftId: row?.schedule?.shiftId ?? shifts[0]?.id ?? "",
       rotationOffDate: "",
       reason: row?.schedule?.reason ?? "",
@@ -616,14 +621,6 @@ export default function ShiftSchedulePage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => openChangeShiftDialog()}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Change Shift
-          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -916,7 +913,6 @@ export default function ShiftSchedulePage() {
 
       <ChangeShiftDialog
         open={isChangeDialogOpen}
-        employees={employees}
         shifts={shifts}
         form={shiftChangeForm}
         isSaving={changeShiftMutation.isPending}
@@ -939,7 +935,6 @@ export default function ShiftSchedulePage() {
 
 function ChangeShiftDialog({
   open,
-  employees,
   shifts,
   form,
   isSaving,
@@ -948,7 +943,6 @@ function ChangeShiftDialog({
   onSubmit,
 }: {
   open: boolean;
-  employees: Employee[];
   shifts: Shift[];
   form: ShiftChangeForm;
   isSaving: boolean;
@@ -979,21 +973,25 @@ function ChangeShiftDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <div>
-            <Label htmlFor="change-employee">Employee</Label>
-            <Select
-              id="change-employee"
-              className="mt-2"
-              value={form.employeeId}
-              onChange={(event) => updateField("employeeId", event.target.value)}
-            >
-              {employees.length === 0 && <option value="">No employees available</option>}
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {getEmployeeLabel(employee)}
-                </option>
-              ))}
-            </Select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="change-employee">Employee</Label>
+              <Input
+                id="change-employee"
+                className="mt-2"
+                value={form.employeeLabel || "No employee selected"}
+                readOnly
+              />
+            </div>
+            <div>
+              <Label htmlFor="change-current-work-date">Current work date</Label>
+              <Input
+                id="change-current-work-date"
+                className="mt-2"
+                value={form.currentWorkDate}
+                readOnly
+              />
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
