@@ -342,6 +342,7 @@ model Attendance {
   overtimeMinutes  Int              @default(0)
   workMinutes      Int              @default(0)
   note             String?
+  manualOverride   Boolean          @default(false)
   updatedBy        String?
   adjustmentReason String?
 

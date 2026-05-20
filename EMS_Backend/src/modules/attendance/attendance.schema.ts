@@ -45,6 +45,7 @@ export const updateAttendanceSchema = z
   .object({
     checkInAt: optionalTimestampSchema,
     checkOutAt: optionalTimestampSchema.nullable(),
+    manualOverride: z.coerce.boolean().optional(),
     lateMinutes: z.coerce.number().int().min(0).optional(),
     overtimeMinutes: z.coerce.number().int().min(0).optional(),
     status: z.enum(["PRESENT", "LATE", "ABSENT", "HALF_DAY", "OVERTIME"]).optional(),

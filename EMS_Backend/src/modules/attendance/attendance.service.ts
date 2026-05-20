@@ -156,6 +156,39 @@ function resolveStatus(lateMinutes: number, overtimeMinutes: number, workMinutes
   return AttendanceStatus.PRESENT;
 }
 
+function calculateAttendanceFromTimes(
+  schedule: Pick<ScheduleCandidate, "workDate" | "shift">,
+  checkInAt: Date,
+  checkOutAt: Date | null,
+) {
+  const { start, end } = getScheduleWindow(schedule);
+  const lateMinutes = minutesBetween(start, checkInAt);
+  const overtimeMinutes = checkOutAt ? minutesBetween(end, checkOutAt) : 0;
+  const workMinutes = checkOutAt ? minutesBetween(checkInAt, checkOutAt) : 0;
+  const scheduledMinutes = minutesBetween(start, end);
+  const status = checkOutAt
+    ? resolveStatus(lateMinutes, overtimeMinutes, workMinutes, scheduledMinutes)
+    : lateMinutes > 0
+      ? AttendanceStatus.LATE
+      : AttendanceStatus.PRESENT;
+
+  return {
+    lateMinutes,
+    overtimeMinutes,
+    workMinutes,
+    status,
+  };
+}
+
+function isAttendanceTimeBlockedDay(dayType: ShiftScheduleDayType): boolean {
+  return (
+    dayType === ShiftScheduleDayType.ROTATION_OFF ||
+    dayType === ShiftScheduleDayType.OFF ||
+    dayType === ShiftScheduleDayType.HOLIDAY ||
+    dayType === ShiftScheduleDayType.LEAVE
+  );
+}
+
 export const attendanceService = {
   checkIn: async (data: CheckInInput, createdBy: string) => {
     const checkInAt = data.checkInAt ?? new Date();
@@ -304,12 +337,33 @@ export const attendanceService = {
       throw httpError("Check-out time must be after check-in time", 400);
     }
 
-    const cannotEditTimes =
-      attendance.shiftSchedule.dayType === ShiftScheduleDayType.OFF ||
-      attendance.shiftSchedule.dayType === ShiftScheduleDayType.ROTATION_OFF;
+    const cannotEditTimes = isAttendanceTimeBlockedDay(attendance.shiftSchedule.dayType);
 
     if (cannotEditTimes && (data.checkInAt !== undefined || data.checkOutAt !== undefined)) {
-      throw httpError("Cannot edit attendance times on off days", 400);
+      throw httpError("Cannot edit attendance times on non-working days", 400);
+    }
+
+    const manualOverride = data.manualOverride ?? false;
+
+    if (manualOverride && !data.adjustmentReason?.trim()) {
+      throw httpError("Adjustment reason is required when manual override is enabled", 400);
+    }
+
+    const calculatedAttendance = calculateAttendanceFromTimes(
+      attendance.shiftSchedule,
+      nextCheckInAt,
+      nextCheckOutAt,
+    );
+
+    const manualAttendance = {
+      lateMinutes: data.lateMinutes ?? attendance.lateMinutes,
+      overtimeMinutes: data.overtimeMinutes ?? attendance.overtimeMinutes,
+      workMinutes: nextCheckOutAt ? minutesBetween(nextCheckInAt, nextCheckOutAt) : 0,
+      status: data.status ?? attendance.status,
+    };
+
+    if (manualAttendance.workMinutes < 0) {
+      throw httpError("Work minutes cannot be negative", 400);
     }
 
     return prisma.attendance.update({
@@ -317,13 +371,14 @@ export const attendanceService = {
       data: {
         ...(data.checkInAt !== undefined && { checkInAt: data.checkInAt }),
         ...(data.checkOutAt !== undefined && { checkOutAt: data.checkOutAt }),
-        ...(data.lateMinutes !== undefined && { lateMinutes: data.lateMinutes }),
-        ...(data.overtimeMinutes !== undefined && { overtimeMinutes: data.overtimeMinutes }),
-        ...(data.status !== undefined && { status: data.status }),
+        lateMinutes: manualOverride ? manualAttendance.lateMinutes : calculatedAttendance.lateMinutes,
+        overtimeMinutes: manualOverride ? manualAttendance.overtimeMinutes : calculatedAttendance.overtimeMinutes,
+        workMinutes: manualOverride ? manualAttendance.workMinutes : calculatedAttendance.workMinutes,
+        status: manualOverride ? manualAttendance.status : calculatedAttendance.status,
+        manualOverride,
         ...(data.note !== undefined && { note: data.note }),
         ...(data.adjustmentReason !== undefined && { adjustmentReason: data.adjustmentReason }),
         updatedBy,
-        workMinutes: nextCheckOutAt ? minutesBetween(nextCheckInAt, nextCheckOutAt) : 0,
       },
       include: attendanceRepository.attendanceInclude,
     });

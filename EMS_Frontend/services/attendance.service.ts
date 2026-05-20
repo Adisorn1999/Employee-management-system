@@ -17,6 +17,7 @@ export type AttendancePunchPayload = {
 export type AttendanceUpdatePayload = {
   checkInAt?: string;
   checkOutAt?: string | null;
+  manualOverride?: boolean;
   lateMinutes?: number;
   overtimeMinutes?: number;
   status?: "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";

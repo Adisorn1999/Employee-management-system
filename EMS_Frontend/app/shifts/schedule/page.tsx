@@ -13,7 +13,12 @@ import {
   Search,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,6 +85,9 @@ type ScheduleAttendanceRow = SelectedCell & {
   status: "OFF" | "HOLIDAY" | "LEAVE" | "Not checked in" | "Working" | "Completed";
 };
 
+type StoredAttendanceStatus = "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";
+type EditAttendanceStatus = StoredAttendanceStatus | "WORKING" | "COMPLETED";
+
 type ShiftChangeForm = {
   employeeId: string;
   employeeLabel: string;
@@ -95,10 +103,22 @@ type AttendanceEditForm = {
   checkOutAt: string;
   lateMinutes: string;
   overtimeMinutes: string;
-  attendanceStatus: "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "OVERTIME";
+  workMinutes: string;
+  attendanceStatus: EditAttendanceStatus;
+  manualOverride: boolean;
   note: string;
   adjustmentReason: string;
 };
+
+const EMPLOYEE_FETCH_PAGE_SIZE = 100;
+const ROWS_PER_PAGE_OPTIONS = [20, 50, 100] as const;
+const STORED_ATTENDANCE_STATUSES: StoredAttendanceStatus[] = [
+  "PRESENT",
+  "LATE",
+  "ABSENT",
+  "HALF_DAY",
+  "OVERTIME",
+];
 
 function toDateInputValue(date?: Date | string | null) {
   const parsedDate = date instanceof Date ? date : new Date(date ?? "");
@@ -127,13 +147,6 @@ function isDateInputValue(value: string) {
   return !Number.isNaN(date.getTime());
 }
 
-function addDays(value: string, days: number) {
-  const safeValue = isDateInputValue(value) ? value : getTodayDateInputValue();
-  const date = new Date(`${safeValue}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  return toDateInputValue(date);
-}
-
 function getDaysInclusive(startDate: string, endDate: string) {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -148,14 +161,6 @@ function getDaysInclusive(startDate: string, endDate: string) {
   }
 
   return days;
-}
-
-function getInclusiveDayCount(startDate: string, endDate: string) {
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
-  const diff = end.getTime() - start.getTime();
-
-  return Math.max(1, Math.floor(diff / 86_400_000) + 1);
 }
 
 function isDateBefore(value: string, compareTo: string) {
@@ -208,6 +213,83 @@ function toDateTimeInputValue(value?: string | null) {
 
 function toIsoDateTime(value: string) {
   return new Date(value).toISOString();
+}
+
+function minutesFromClock(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function combineDateAndClock(workDate: string, time: string) {
+  return new Date(`${workDate}T${time}`);
+}
+
+function minutesBetweenDates(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60_000));
+}
+
+function getShiftWindow(workDate: string, shift?: Shift | null) {
+  if (!shift) {
+    return null;
+  }
+
+  const start = combineDateAndClock(workDate, shift.startTime);
+  const end = combineDateAndClock(workDate, shift.endTime);
+
+  if (minutesFromClock(shift.endTime) <= minutesFromClock(shift.startTime)) {
+    end.setDate(end.getDate() + 1);
+  }
+
+  return { start, end };
+}
+
+function calculateAttendanceEditValues(
+  row: ScheduleAttendanceRow | null,
+  checkInAtValue: string,
+  checkOutAtValue: string,
+) {
+  const checkInAt = checkInAtValue ? new Date(checkInAtValue) : null;
+  const checkOutAt = checkOutAtValue ? new Date(checkOutAtValue) : null;
+  const shiftWindow = row ? getShiftWindow(row.workDate, row.schedule?.shift) : null;
+
+  if (!checkInAt || Number.isNaN(checkInAt.getTime()) || !shiftWindow) {
+    return {
+      lateMinutes: "0",
+      overtimeMinutes: "0",
+      workMinutes: "0",
+      attendanceStatus: "WORKING" as EditAttendanceStatus,
+    };
+  }
+
+  const lateMinutes = minutesBetweenDates(shiftWindow.start, checkInAt);
+  const overtimeMinutes =
+    checkOutAt && !Number.isNaN(checkOutAt.getTime())
+      ? minutesBetweenDates(shiftWindow.end, checkOutAt)
+      : 0;
+  const workMinutes =
+    checkOutAt && !Number.isNaN(checkOutAt.getTime())
+      ? minutesBetweenDates(checkInAt, checkOutAt)
+      : 0;
+  const attendanceStatus: EditAttendanceStatus = !checkOutAt
+    ? "WORKING"
+    : overtimeMinutes > 0
+      ? "OVERTIME"
+      : "COMPLETED";
+
+  return {
+    lateMinutes: String(lateMinutes),
+    overtimeMinutes: String(overtimeMinutes),
+    workMinutes: String(workMinutes),
+    attendanceStatus,
+  };
+}
+
+function toStoredAttendanceStatus(status: EditAttendanceStatus): StoredAttendanceStatus {
+  if (status === "WORKING" || status === "COMPLETED") {
+    return "PRESENT";
+  }
+
+  return status;
 }
 
 function getScheduleKey(employeeId: string, workDate: string) {
@@ -386,6 +468,9 @@ export default function ShiftSchedulePage() {
   const [search, setSearch] = useState("");
   const [shiftFilterId, setShiftFilterId] = useState("");
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] =
+    useState<(typeof ROWS_PER_PAGE_OPTIONS)[number]>(20);
   const [selectedAttendance, setSelectedAttendance] =
     useState<AttendanceRecord | null>(null);
   const [selectedAttendanceRow, setSelectedAttendanceRow] =
@@ -395,7 +480,9 @@ export default function ShiftSchedulePage() {
     checkOutAt: "",
     lateMinutes: "0",
     overtimeMinutes: "0",
-    attendanceStatus: "PRESENT",
+    workMinutes: "0",
+    attendanceStatus: "WORKING",
+    manualOverride: false,
     note: "",
     adjustmentReason: "",
   });
@@ -446,11 +533,34 @@ export default function ShiftSchedulePage() {
     queryFn: () =>
       listEmployees({
         page: 1,
-        limit: 100,
+        limit: EMPLOYEE_FETCH_PAGE_SIZE,
         isActive: "true",
         departmentId: departmentId || undefined,
         search: search.trim() || undefined,
       }),
+  });
+  const employeeTotalPages = employeesQuery.data?.meta.totalPages ?? 1;
+  const remainingEmployeePages = useMemo(
+    () =>
+      Array.from(
+        { length: Math.max(0, employeeTotalPages - 1) },
+        (_, index) => index + 2,
+      ),
+    [employeeTotalPages],
+  );
+  const additionalEmployeesQueries = useQueries({
+    queries: remainingEmployeePages.map((page) => ({
+      queryKey: ["employees", "shift-schedule", { departmentId, search, page }],
+      enabled: canLoadScheduleData && Boolean(employeesQuery.data),
+      queryFn: () =>
+        listEmployees({
+          page,
+          limit: EMPLOYEE_FETCH_PAGE_SIZE,
+          isActive: "true" as const,
+          departmentId: departmentId || undefined,
+          search: search.trim() || undefined,
+        }),
+    })),
   });
 
   const departmentsQuery = useQuery({
@@ -600,9 +710,17 @@ export default function ShiftSchedulePage() {
     },
   });
 
+  const hasAdditionalEmployeesError = additionalEmployeesQueries.some(
+    (query) => query.isError,
+  );
+  const isLoadingAdditionalEmployees = additionalEmployeesQueries.some(
+    (query) => query.isLoading,
+  );
+
   useEffect(() => {
     if (
       employeesQuery.isError ||
+      hasAdditionalEmployeesError ||
       departmentsQuery.isError ||
       shiftsQuery.isError ||
       schedulesQuery.isError ||
@@ -618,12 +736,19 @@ export default function ShiftSchedulePage() {
     attendanceQuery.isError,
     departmentsQuery.isError,
     employeesQuery.isError,
+    hasAdditionalEmployeesError,
     schedulesQuery.isError,
     shiftsQuery.isError,
     toast,
   ]);
 
-  const employees = employeesQuery.data?.data ?? [];
+  const employees = useMemo(
+    () => [
+      ...(employeesQuery.data?.data ?? []),
+      ...additionalEmployeesQueries.flatMap((query) => query.data?.data ?? []),
+    ],
+    [additionalEmployeesQueries, employeesQuery.data],
+  );
   const departments = departmentsQuery.data?.data ?? [];
   const shifts = shiftsQuery.data ?? [];
 
@@ -699,15 +824,41 @@ export default function ShiftSchedulePage() {
     schedulesByCell,
     shiftFilterId,
   ]);
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+  const effectiveCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = totalRows === 0 ? 0 : (effectiveCurrentPage - 1) * rowsPerPage;
+  const pageEndIndex = Math.min(pageStartIndex + rowsPerPage, totalRows);
+  const visibleRows = useMemo(
+    () => rows.slice(pageStartIndex, pageEndIndex),
+    [pageEndIndex, pageStartIndex, rows],
+  );
+  const canGoToPreviousPage = effectiveCurrentPage > 1;
+  const canGoToNextPage = effectiveCurrentPage < totalPages;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    attendanceStatusFilter,
+    departmentId,
+    rowsPerPage,
+    scheduleEndDate,
+    scheduleStartDate,
+    search,
+    shiftFilterId,
+  ]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const isLoading =
     employeesQuery.isLoading ||
+    isLoadingAdditionalEmployees ||
     departmentsQuery.isLoading ||
     shiftsQuery.isLoading ||
     schedulesQuery.isLoading ||
     attendanceQuery.isLoading;
-  const appliedDayCount = getInclusiveDayCount(scheduleStartDate, scheduleEndDate);
-
   function openChangeShiftDialog(row: ScheduleAttendanceRow) {
     setShiftChangeForm({
       employeeId: row.employee.id,
@@ -726,13 +877,25 @@ export default function ShiftSchedulePage() {
       return;
     }
 
+    const checkInAt = toDateTimeInputValue(row.attendance.checkInAt);
+    const checkOutAt = toDateTimeInputValue(row.attendance.checkOutAt);
+    const calculatedValues = calculateAttendanceEditValues(row, checkInAt, checkOutAt);
+
     setSelectedAttendanceRow(row);
     setAttendanceEditForm({
-      checkInAt: toDateTimeInputValue(row.attendance.checkInAt),
-      checkOutAt: toDateTimeInputValue(row.attendance.checkOutAt),
-      lateMinutes: String(row.attendance.lateMinutes ?? 0),
-      overtimeMinutes: String(row.attendance.overtimeMinutes ?? 0),
-      attendanceStatus: row.attendance.status as AttendanceEditForm["attendanceStatus"],
+      checkInAt,
+      checkOutAt,
+      lateMinutes: row.attendance.manualOverride
+        ? String(row.attendance.lateMinutes ?? 0)
+        : calculatedValues.lateMinutes,
+      overtimeMinutes: row.attendance.manualOverride
+        ? String(row.attendance.overtimeMinutes ?? 0)
+        : calculatedValues.overtimeMinutes,
+      workMinutes: String(row.attendance.workMinutes ?? calculatedValues.workMinutes),
+      attendanceStatus: row.attendance.manualOverride
+        ? (row.attendance.status as StoredAttendanceStatus)
+        : calculatedValues.attendanceStatus,
+      manualOverride: Boolean(row.attendance.manualOverride),
       note: row.attendance.note ?? "",
       adjustmentReason: row.attendance.adjustmentReason ?? "",
     });
@@ -744,6 +907,18 @@ export default function ShiftSchedulePage() {
 
   function handleCheckOut(row: ScheduleAttendanceRow) {
     checkOutMutation.mutate({ employeeId: row.employee.id });
+  }
+
+  function goToPreviousPage() {
+    setCurrentPage((page) => Math.max(1, page - 1));
+  }
+
+  function goToNextPage() {
+    setCurrentPage((page) => Math.min(totalPages, page + 1));
+  }
+
+  function handleRowsPerPageChange(value: string) {
+    setRowsPerPage(Number(value) as (typeof ROWS_PER_PAGE_OPTIONS)[number]);
   }
 
   function applyDateSearch() {
@@ -764,18 +939,6 @@ export default function ShiftSchedulePage() {
     setStartDate(todayValue);
     setEndDate(todayValue);
     setAppliedDateRange({ startDate: todayValue, endDate: todayValue });
-  }
-
-  function moveAppliedDateRange(daysToMove: number) {
-    const nextStartDate = addDays(scheduleStartDate, daysToMove);
-    const nextEndDate = addDays(scheduleEndDate, daysToMove);
-
-    setStartDate(nextStartDate);
-    setEndDate(nextEndDate);
-    setAppliedDateRange({
-      startDate: nextStartDate,
-      endDate: nextEndDate,
-    });
   }
 
   function handleChangeShift() {
@@ -815,9 +978,16 @@ export default function ShiftSchedulePage() {
         : cannotEditTimes
           ? undefined
           : null,
-      lateMinutes: Number(attendanceEditForm.lateMinutes || 0),
-      overtimeMinutes: Number(attendanceEditForm.overtimeMinutes || 0),
-      status: attendanceEditForm.attendanceStatus,
+      manualOverride: attendanceEditForm.manualOverride,
+      lateMinutes: attendanceEditForm.manualOverride
+        ? Number(attendanceEditForm.lateMinutes || 0)
+        : undefined,
+      overtimeMinutes: attendanceEditForm.manualOverride
+        ? Number(attendanceEditForm.overtimeMinutes || 0)
+        : undefined,
+      status: attendanceEditForm.manualOverride
+        ? toStoredAttendanceStatus(attendanceEditForm.attendanceStatus)
+        : undefined,
       note: attendanceEditForm.note.trim() || null,
       adjustmentReason: attendanceEditForm.adjustmentReason.trim() || null,
     };
@@ -837,24 +1007,6 @@ export default function ShiftSchedulePage() {
             view.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Previous date range"
-            onClick={() => moveAppliedDateRange(-appliedDayCount)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Next date range"
-            onClick={() => moveAppliedDateRange(appliedDayCount)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
       </div>
 
       <Card>
@@ -869,7 +1021,7 @@ export default function ShiftSchedulePage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <CalendarDays className="h-4 w-4" />
               <span>
-                {employees.length} employees, {rows.length} schedule rows
+                {employees.length} employees, {totalRows} schedule rows
               </span>
             </div>
           </div>
@@ -1027,7 +1179,7 @@ export default function ShiftSchedulePage() {
                   </TableRow>
                 )}
                 {!isLoading &&
-                  rows.map((row) => {
+                  visibleRows.map((row) => {
                     const shift = row.schedule?.shift;
                     const dayType = getDayType(row.schedule);
                     const isPunchDisabledDay = ["ROTATION_OFF", "OFF", "HOLIDAY", "LEAVE"].includes(dayType);
@@ -1172,6 +1324,55 @@ export default function ShiftSchedulePage() {
                   })}
               </TableBody>
             </Table>
+          </div>
+          <div className="flex flex-col gap-3 border-t px-1 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-muted-foreground">
+              {totalRows === 0 ? "0-0" : `${pageStartIndex + 1}-${pageEndIndex}`} of {totalRows}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="schedule-rows-per-page"
+                  className="whitespace-nowrap text-sm font-normal text-muted-foreground"
+                >
+                  Rows per page
+                </Label>
+                <Select
+                  id="schedule-rows-per-page"
+                  className="h-9 w-24"
+                  value={String(rowsPerPage)}
+                  onChange={(event) => handleRowsPerPageChange(event.target.value)}
+                >
+                  {ROWS_PER_PAGE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Previous page"
+                  disabled={!canGoToPreviousPage}
+                  onClick={goToPreviousPage}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Next page"
+                  disabled={!canGoToNextPage}
+                  onClick={goToNextPage}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1357,7 +1558,7 @@ function AttendanceEditDialog({
   onSubmit: () => void;
 }) {
   const dayType = getDayType(row?.schedule);
-  const cannotEditTimes = dayType === "OFF" || dayType === "ROTATION_OFF";
+  const cannotEditTimes = ["OFF", "ROTATION_OFF", "HOLIDAY", "LEAVE"].includes(dayType);
   const checkInTime = form.checkInAt ? new Date(form.checkInAt).getTime() : null;
   const checkOutTime = form.checkOutAt ? new Date(form.checkOutAt).getTime() : null;
   const hasInvalidTimeRange =
@@ -1369,19 +1570,69 @@ function AttendanceEditDialog({
   const hasInvalidMinutes =
     Number(form.lateMinutes) < 0 ||
     Number(form.overtimeMinutes) < 0 ||
+    Number(form.workMinutes) < 0 ||
     !Number.isInteger(Number(form.lateMinutes)) ||
-    !Number.isInteger(Number(form.overtimeMinutes));
+    !Number.isInteger(Number(form.overtimeMinutes)) ||
+    !Number.isInteger(Number(form.workMinutes));
+  const isAdjustmentReasonMissing =
+    form.manualOverride && !form.adjustmentReason.trim();
   const canSubmit =
     Boolean(row?.attendance) &&
     Boolean(form.attendanceStatus) &&
     !hasInvalidTimeRange &&
-    !hasInvalidMinutes;
+    !hasInvalidMinutes &&
+    !isAdjustmentReasonMissing;
 
   function updateField<Key extends keyof AttendanceEditForm>(
     key: Key,
     value: AttendanceEditForm[Key],
   ) {
-    onFormChange({ ...form, [key]: value });
+    const nextForm = { ...form, [key]: value };
+
+    if (key === "manualOverride" && value === false) {
+      onFormChange({
+        ...nextForm,
+        ...calculateAttendanceEditValues(row, nextForm.checkInAt, nextForm.checkOutAt),
+      });
+      return;
+    }
+
+    if (key === "manualOverride" && value === true) {
+      onFormChange({
+        ...nextForm,
+        attendanceStatus: STORED_ATTENDANCE_STATUSES.includes(
+          nextForm.attendanceStatus as StoredAttendanceStatus,
+        )
+          ? nextForm.attendanceStatus
+          : "PRESENT",
+      });
+      return;
+    }
+
+    if (
+      !nextForm.manualOverride &&
+      (key === "checkInAt" || key === "checkOutAt")
+    ) {
+      onFormChange({
+        ...nextForm,
+        ...calculateAttendanceEditValues(row, nextForm.checkInAt, nextForm.checkOutAt),
+      });
+      return;
+    }
+
+    if (nextForm.manualOverride && (key === "checkInAt" || key === "checkOutAt")) {
+      onFormChange({
+        ...nextForm,
+        workMinutes: calculateAttendanceEditValues(
+          row,
+          nextForm.checkInAt,
+          nextForm.checkOutAt,
+        ).workMinutes,
+      });
+      return;
+    }
+
+    onFormChange(nextForm);
   }
 
   return (
@@ -1398,7 +1649,7 @@ function AttendanceEditDialog({
         <div className="grid gap-4">
           {cannotEditTimes && (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Times are locked for {dayType} days. Status, minutes, and notes can still be adjusted.
+              Times are locked for {dayType} days. Status, minutes, and notes can still be adjusted with manual override.
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -1430,6 +1681,15 @@ function AttendanceEditDialog({
               Check-out time must be after check-in time.
             </p>
           )}
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-input"
+              checked={form.manualOverride}
+              onChange={(event) => updateField("manualOverride", event.target.checked)}
+            />
+            Manual override
+          </label>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor="attendance-late-minutes">Late minutes</Label>
@@ -1440,6 +1700,7 @@ function AttendanceEditDialog({
                 min={0}
                 step={1}
                 value={form.lateMinutes}
+                disabled={!form.manualOverride}
                 onChange={(event) => updateField("lateMinutes", event.target.value)}
               />
             </div>
@@ -1452,30 +1713,55 @@ function AttendanceEditDialog({
                 min={0}
                 step={1}
                 value={form.overtimeMinutes}
+                disabled={!form.manualOverride}
                 onChange={(event) => updateField("overtimeMinutes", event.target.value)}
               />
             </div>
             <div>
-              <Label htmlFor="attendance-status">Attendance status</Label>
-              <Select
-                id="attendance-status"
+              <Label htmlFor="attendance-work-minutes">Work minutes</Label>
+              <Input
+                id="attendance-work-minutes"
                 className="mt-2"
-                value={form.attendanceStatus}
-                onChange={(event) =>
-                  updateField("attendanceStatus", event.target.value as AttendanceEditForm["attendanceStatus"])
-                }
-              >
-                <option value="PRESENT">PRESENT</option>
-                <option value="LATE">LATE</option>
-                <option value="ABSENT">ABSENT</option>
-                <option value="HALF_DAY">HALF_DAY</option>
-                <option value="OVERTIME">OVERTIME</option>
-              </Select>
+                type="number"
+                min={0}
+                step={1}
+                value={form.workMinutes}
+                readOnly
+              />
             </div>
+          </div>
+          <div>
+            <Label htmlFor="attendance-status">Attendance status</Label>
+            <Select
+              id="attendance-status"
+              className="mt-2"
+              value={form.attendanceStatus}
+              disabled={!form.manualOverride}
+              onChange={(event) =>
+                updateField("attendanceStatus", event.target.value as EditAttendanceStatus)
+              }
+            >
+              {!form.manualOverride && (
+                <>
+                  <option value="WORKING">WORKING</option>
+                  <option value="COMPLETED">COMPLETED</option>
+                </>
+              )}
+              {STORED_ATTENDANCE_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </Select>
           </div>
           {hasInvalidMinutes && (
             <p className="text-sm text-destructive">
-              Late and overtime minutes must be whole numbers of 0 or more.
+              Late, overtime, and work minutes must be whole numbers of 0 or more.
+            </p>
+          )}
+          {isAdjustmentReasonMissing && (
+            <p className="text-sm text-destructive">
+              Adjustment reason is required when manual override is enabled.
             </p>
           )}
           <div>
@@ -1551,6 +1837,7 @@ function AttendanceDialog({
           <DetailItem label="Late minutes" value={String(attendance?.lateMinutes ?? 0)} />
           <DetailItem label="Overtime minutes" value={String(attendance?.overtimeMinutes ?? 0)} />
           <DetailItem label="Work minutes" value={String(attendance?.workMinutes ?? 0)} />
+          <DetailItem label="Manual override" value={attendance?.manualOverride ? "Yes" : "No"} />
           <DetailItem label="Note" value={attendance?.note || "-"} />
           <DetailItem label="Adjustment reason" value={attendance?.adjustmentReason || "-"} />
           <DetailItem label="Updated by" value={attendance?.updatedBy || "-"} />

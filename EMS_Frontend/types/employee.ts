@@ -106,6 +106,7 @@ export type AttendanceRecord = {
   overtimeMinutes: number;
   workMinutes: number;
   note?: string | null;
+  manualOverride?: boolean;
   updatedBy?: string | null;
   adjustmentReason?: string | null;
   createdAt?: string;
