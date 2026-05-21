@@ -89,6 +89,31 @@ enum OffDayStatus {
   CANCELLED
 }
 
+enum FinanceAccountCategory {
+  PERSONAL_BANK
+  CORPORATE_BANK
+  WALLET
+  GATEWAY
+}
+
+enum FinanceAccountStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+enum FinanceFieldType {
+  text
+  textarea
+  number
+  date
+  select
+  email
+  phone
+  password
+}
+
 // ─────────────────────────────────────
 // USER
 // ─────────────────────────────────────
@@ -244,6 +269,84 @@ model Employee {
   @@index([departmentId])
   @@index([positionId])
   @@index([defaultShiftId])
+}
+
+model FinanceAccount {
+  id            String                 @id @default(uuid())
+  category      FinanceAccountCategory
+  provider      String
+  displayName   String
+  accountName   String?
+  accountNumber String?
+  status        FinanceAccountStatus   @default(ACTIVE)
+  startDate     DateTime?              @db.Date
+  expireDate    DateTime?              @db.Date
+  note          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldValues FinanceAccountFieldValue[]
+
+  @@index([category])
+  @@index([provider])
+  @@index([status])
+  @@index([expireDate])
+  @@map("finance_accounts")
+}
+
+model FinanceFieldTemplate {
+  id        String                 @id @default(uuid())
+  category  FinanceAccountCategory
+  provider  String
+  name      String
+  isActive  Boolean                @default(true)
+  createdAt DateTime               @default(now())
+
+  fieldDefinitions FinanceFieldDefinition[]
+
+  @@unique([category, provider, name])
+  @@index([category, provider])
+  @@index([isActive])
+  @@map("finance_field_templates")
+}
+
+model FinanceFieldDefinition {
+  id          String           @id @default(uuid())
+  templateId  String
+  fieldKey    String
+  labelTh     String
+  labelEn     String
+  fieldType   FinanceFieldType @default(text)
+  placeholder String?
+  options     Json?
+  isRequired  Boolean          @default(false)
+  sortOrder   Int              @default(0)
+  isActive    Boolean          @default(true)
+
+  template FinanceFieldTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, fieldKey])
+  @@index([templateId])
+  @@index([isActive])
+  @@map("finance_field_definitions")
+}
+
+model FinanceAccountFieldValue {
+  id            String @id @default(uuid())
+  accountId     String
+  fieldKey      String
+  labelSnapshot String
+  value         String
+  sortOrder     Int    @default(0)
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  account FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([fieldKey])
+  @@map("finance_account_field_values")
 }
 
 model Department {

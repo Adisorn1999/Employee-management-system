@@ -45,6 +45,12 @@ const permissions = [
   { id: "permission_offday_approve", name: "offday.approve", description: "Approve off days" },
   { id: "permission_offday_reject", name: "offday.reject", description: "Reject off days" },
   { id: "permission_offday_cancel", name: "offday.cancel", description: "Cancel off days" },
+  { id: "permission_finance_read", name: "finance.read", description: "Read finance accounts" },
+  { id: "permission_finance_create", name: "finance.create", description: "Create finance accounts" },
+  { id: "permission_finance_update", name: "finance.update", description: "Update finance accounts" },
+  { id: "permission_finance_delete", name: "finance.delete", description: "Deactivate finance accounts" },
+  { id: "permission_finance_template_read", name: "finance.template.read", description: "Read finance templates" },
+  { id: "permission_finance_template_update", name: "finance.template.update", description: "Update finance templates" },
   { id: "permission_profile_read", name: "profile.read", description: "Read own profile" },
   { id: "permission_profile_update", name: "profile.update", description: "Update own profile" },
 ];
@@ -85,6 +91,12 @@ const rolePermissions: Record<string, string[]> = {
     "offday.approve",
     "offday.reject",
     "offday.cancel",
+    "finance.read",
+    "finance.create",
+    "finance.update",
+    "finance.delete",
+    "finance.template.read",
+    "finance.template.update",
     "profile.read",
     "profile.update",
   ],
@@ -122,6 +134,68 @@ const positions = [
   { name: "HR Officer", departmentName: "HR", description: "HR administration" },
   { name: "Shift Manager", departmentName: "Operations", description: "Shift planning and supervision" },
   { name: "Staff", departmentName: "Operations", description: "Operations staff" },
+];
+
+const financeTemplates = [
+  {
+    category: "PERSONAL_BANK" as const,
+    provider: "KBANK",
+    name: "Personal KBANK",
+    fields: [
+      { fieldKey: "national_id", labelTh: "เลขบัตรประชาชน", labelEn: "National ID", fieldType: "text" as const, isRequired: true },
+      { fieldKey: "birth_date", labelTh: "วันเกิด", labelEn: "Birth date", fieldType: "date" as const },
+      { fieldKey: "branch", labelTh: "สาขา", labelEn: "Branch", fieldType: "text" as const },
+      { fieldKey: "atm_card_number", labelTh: "เลขบัตร ATM", labelEn: "ATM card number", fieldType: "text" as const },
+      { fieldKey: "atm_status", labelTh: "ATM", labelEn: "ATM", fieldType: "text" as const },
+      { fieldKey: "sim_ais", labelTh: "เบอร์ซิม AIS", labelEn: "AIS SIM number", fieldType: "phone" as const },
+      { fieldKey: "kbiz", labelTh: "Kbiz", labelEn: "Kbiz", fieldType: "text" as const },
+      { fieldKey: "email", labelTh: "Email", labelEn: "Email", fieldType: "email" as const },
+      { fieldKey: "app_code", labelTh: "รหัส APP", labelEn: "App code", fieldType: "password" as const },
+      { fieldKey: "usage_target", labelTh: "ใช้งาน", labelEn: "Usage", fieldType: "text" as const },
+    ],
+  },
+  {
+    category: "CORPORATE_BANK" as const,
+    provider: "KBANK",
+    name: "Corporate KBANK",
+    fields: [
+      { fieldKey: "company_name", labelTh: "ชื่อบริษัท", labelEn: "Company name", fieldType: "text" as const, isRequired: true },
+      { fieldKey: "company_registration_no", labelTh: "เลขทะเบียนบริษัท", labelEn: "Company registration no.", fieldType: "text" as const },
+      { fieldKey: "director_name", labelTh: "ชื่อกรรมการ", labelEn: "Director name", fieldType: "text" as const },
+      { fieldKey: "branch", labelTh: "สาขา", labelEn: "Branch", fieldType: "text" as const },
+      { fieldKey: "kbiz", labelTh: "Kbiz", labelEn: "Kbiz", fieldType: "text" as const },
+      { fieldKey: "email", labelTh: "Email", labelEn: "Email", fieldType: "email" as const },
+      { fieldKey: "app_code", labelTh: "รหัส APP", labelEn: "App code", fieldType: "password" as const },
+      { fieldKey: "sim_ais", labelTh: "เบอร์ซิม AIS", labelEn: "AIS SIM number", fieldType: "phone" as const },
+      { fieldKey: "usage_target", labelTh: "ใช้งาน", labelEn: "Usage", fieldType: "text" as const },
+    ],
+  },
+  {
+    category: "WALLET" as const,
+    provider: "TRUEWALLET",
+    name: "TrueMoney Wallet",
+    fields: [
+      { fieldKey: "wallet_phone", labelTh: "เบอร์วอเลท", labelEn: "Wallet phone", fieldType: "phone" as const, isRequired: true },
+      { fieldKey: "pin", labelTh: "PIN", labelEn: "PIN", fieldType: "password" as const },
+      { fieldKey: "sim_phone", labelTh: "เบอร์ซิม", labelEn: "SIM phone", fieldType: "phone" as const },
+      { fieldKey: "bound_device", labelTh: "อุปกรณ์ที่ผูก", labelEn: "Bound device", fieldType: "text" as const },
+    ],
+  },
+  {
+    category: "GATEWAY" as const,
+    provider: "OPN",
+    name: "Payment Gateway",
+    fields: [
+      { fieldKey: "merchant_id", labelTh: "Merchant ID", labelEn: "Merchant ID", fieldType: "text" as const, isRequired: true },
+      { fieldKey: "api_key", labelTh: "API Key", labelEn: "API Key", fieldType: "password" as const, isRequired: true },
+      { fieldKey: "secret_key", labelTh: "Secret Key", labelEn: "Secret Key", fieldType: "password" as const },
+      { fieldKey: "callback_url", labelTh: "Callback URL", labelEn: "Callback URL", fieldType: "text" as const },
+      { fieldKey: "webhook_url", labelTh: "Webhook URL", labelEn: "Webhook URL", fieldType: "text" as const },
+      { fieldKey: "username", labelTh: "Username", labelEn: "Username", fieldType: "text" as const },
+      { fieldKey: "password", labelTh: "Password", labelEn: "Password", fieldType: "password" as const },
+      { fieldKey: "ip_whitelist", labelTh: "IP Whitelist", labelEn: "IP Whitelist", fieldType: "textarea" as const },
+    ],
+  },
 ];
 
 function seedDate(value: string): Date {
@@ -383,7 +457,58 @@ async function main() {
     });
   }
 
-  console.log("Seeded RBAC, super admin, departments, positions, employees, shifts, and schedules.");
+  for (const templateSeed of financeTemplates) {
+    const template = await prisma.financeFieldTemplate.upsert({
+      where: {
+        category_provider_name: {
+          category: templateSeed.category,
+          provider: templateSeed.provider,
+          name: templateSeed.name,
+        },
+      },
+      update: {
+        isActive: true,
+      },
+      create: {
+        category: templateSeed.category,
+        provider: templateSeed.provider,
+        name: templateSeed.name,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    for (const [index, field] of templateSeed.fields.entries()) {
+      await prisma.financeFieldDefinition.upsert({
+        where: {
+          templateId_fieldKey: {
+            templateId: template.id,
+            fieldKey: field.fieldKey,
+          },
+        },
+        update: {
+          labelTh: field.labelTh,
+          labelEn: field.labelEn,
+          fieldType: field.fieldType,
+          isRequired: field.isRequired ?? false,
+          sortOrder: index + 1,
+          isActive: true,
+        },
+        create: {
+          templateId: template.id,
+          fieldKey: field.fieldKey,
+          labelTh: field.labelTh,
+          labelEn: field.labelEn,
+          fieldType: field.fieldType,
+          isRequired: field.isRequired ?? false,
+          sortOrder: index + 1,
+          isActive: true,
+        },
+      });
+    }
+  }
+
+  console.log("Seeded RBAC, super admin, departments, positions, employees, shifts, schedules, and finance templates.");
 }
 
 main()

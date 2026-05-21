@@ -21,7 +21,12 @@ type TranslationKey =
   | "nav.lateOtReport"
   | "nav.offDayReport"
   | "nav.employeeSummary"
+  | "nav.financeAccounts"
+  | "nav.financeAccountList"
+  | "nav.financeTemplates"
+  | "nav.financeFieldDefinitions"
   | "nav.settings"
+  | "nav.accountLines"
   | "app.subtitle"
   | "app.phaseTitle"
   | "app.phaseDescription"
@@ -49,7 +54,12 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     "nav.lateOtReport": "รายงานมาสาย / OT",
     "nav.offDayReport": "รายงานวันหยุด",
     "nav.employeeSummary": "สรุปพนักงาน",
+    "nav.financeAccounts": "บัญชีการเงิน",
+    "nav.financeAccountList": "รายการบัญชี",
+    "nav.financeTemplates": "ตั้งค่า Template",
+    "nav.financeFieldDefinitions": "ตั้งค่าหัวข้อข้อมูล",
     "nav.settings": "ตั้งค่า",
+    "nav.accountLines": "สายบัญชี",
     "app.subtitle": "ระบบจัดการงาน",
     "app.phaseTitle": "เฟส 1",
     "app.phaseDescription": "ระบบหลักสำหรับเข้าสู่ระบบ เมนู และข้อมูลพนักงาน",
@@ -73,7 +83,12 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     "nav.lateOtReport": "Late / OT Report",
     "nav.offDayReport": "Off Day Report",
     "nav.employeeSummary": "Employee Summary",
+    "nav.financeAccounts": "Finance Accounts",
+    "nav.financeAccountList": "Account List",
+    "nav.financeTemplates": "Templates",
+    "nav.financeFieldDefinitions": "Field Definitions",
     "nav.settings": "Settings",
+    "nav.accountLines": "Account Lines",
     "app.subtitle": "Operations Console",
     "app.phaseTitle": "Phase 1",
     "app.phaseDescription": "Core auth, navigation, and employee records.",

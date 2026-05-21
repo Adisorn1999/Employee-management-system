@@ -9,10 +9,15 @@ import { requirePermission, requireRole } from "../../middleware/role.middleware
 
 const router = Router();
 
+const redisStore =
+  process.env.NODE_ENV === "development"
+    ? undefined
+    : new RedisStore({
+        sendCommand: (...args: string[]) => redis.call(...args as [string, ...string[]]) as Promise<RedisReply>,
+      });
+
 const loginRateLimit = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args as [string, ...string[]]) as Promise<RedisReply>,
-  }),
+  ...(redisStore && { store: redisStore }),
   windowMs: 15 * 60 * 1000,
   limit: process.env.NODE_ENV === "development" ? 1000 : 5,
   skipSuccessfulRequests: true,
