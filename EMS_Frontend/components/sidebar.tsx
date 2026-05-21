@@ -34,12 +34,21 @@ const shiftItems = [
   { href: "/shifts/leave-requests", label: "Leave Requests", icon: List },
 ];
 
+const reportItems = [
+  { href: "/reports/attendance", label: "Attendance Report", icon: CalendarDays },
+  { href: "/reports/late-overtime", label: "Late / Overtime Report", icon: Clock3 },
+  { href: "/reports/monthly-off", label: "Monthly Off Report", icon: CalendarDays },
+  { href: "/reports/employee-summary", label: "Employee Summary", icon: Users },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const isEmployeeRoute = pathname.startsWith("/employees");
   const isShiftRoute = pathname.startsWith("/shifts");
+  const isReportRoute = pathname.startsWith("/reports");
   const [employeesOpen, setEmployeesOpen] = useState(isEmployeeRoute);
   const [shiftsOpen, setShiftsOpen] = useState(isShiftRoute);
+  const [reportsOpen, setReportsOpen] = useState(isReportRoute);
 
   useEffect(() => {
     if (isEmployeeRoute) {
@@ -52,6 +61,12 @@ export function Sidebar() {
       setShiftsOpen(true);
     }
   }, [isShiftRoute]);
+
+  useEffect(() => {
+    if (isReportRoute) {
+      setReportsOpen(true);
+    }
+  }, [isReportRoute]);
 
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-card md:block">
@@ -155,6 +170,54 @@ export function Sidebar() {
             <div className="overflow-hidden">
               <div className="mt-1 space-y-1 pl-6">
                 {shiftItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname === item.href;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                        active && "bg-secondary text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              "h-10 w-full justify-start gap-3 px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+              isReportRoute && "bg-secondary text-foreground"
+            )}
+            onClick={() => setReportsOpen((open) => !open)}
+            aria-expanded={reportsOpen}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span className="flex-1 text-left">Reports</span>
+            <ChevronDown
+              className={cn("h-4 w-4 transition-transform duration-200", reportsOpen && "rotate-180")}
+              aria-hidden="true"
+            />
+          </Button>
+          <div
+            className={cn(
+              "grid transition-all duration-200 ease-in-out",
+              reportsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="mt-1 space-y-1 pl-6">
+                {reportItems.map((item) => {
                   const Icon = item.icon;
                   const active = pathname === item.href;
 

@@ -2,20 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock3, LayoutDashboard, Users } from "lucide-react";
+import { BarChart3, Clock3, LayoutDashboard, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/shifts", label: "Shifts", icon: Clock3 },
+  { href: "/reports/attendance", label: "Reports", icon: BarChart3 },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="grid grid-cols-3 gap-1 border-b bg-card p-2 md:hidden">
+    <nav className="grid grid-cols-4 gap-1 border-b bg-card p-2 md:hidden">
       {navItems.map((item) => {
         const Icon = item.icon;
         const active =
@@ -23,6 +24,8 @@ export function MobileNav() {
             ? pathname.startsWith("/employees")
             : item.href === "/shifts"
               ? pathname.startsWith("/shifts")
+              : item.href.startsWith("/reports")
+                ? pathname.startsWith("/reports")
               : pathname === item.href;
 
         return (
