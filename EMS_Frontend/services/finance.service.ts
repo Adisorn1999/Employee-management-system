@@ -7,9 +7,12 @@ import type {
   FinanceAccountFieldValue,
   FinanceAccountListResponse,
   FinanceAccountStatus,
+  FinanceChannelType,
+  FinanceChannelTypeCode,
   FinanceFieldDefinition,
   FinanceFieldTemplate,
   FinanceFieldType,
+  FinanceProvider,
 } from "@/types/finance";
 
 const ACCOUNT_LINES_STORAGE_KEY = "ems-account-lines";
@@ -39,9 +42,32 @@ export type FinanceAccountPayload = {
 };
 
 export type FinanceTemplatePayload = {
-  category: FinanceAccountCategory;
-  provider: string;
+  providerId: string;
   name: string;
+  isActive?: boolean;
+};
+
+export type FinanceTemplateListParams = {
+  category?: FinanceAccountCategory;
+  channelTypeId?: string;
+  channelType?: FinanceChannelTypeCode;
+  providerId?: string;
+  provider?: string;
+  isActive?: "true" | "false";
+};
+
+export type FinanceChannelTypePayload = {
+  code: FinanceChannelTypeCode;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+};
+
+export type FinanceProviderPayload = {
+  channelTypeId: string;
+  code: string;
+  name: string;
+  description?: string;
   isActive?: boolean;
 };
 
@@ -106,6 +132,46 @@ export type FinanceDefinitionPayload = {
   sortOrder?: number;
   isActive?: boolean;
 };
+
+export async function listFinanceChannelTypes(params: { isActive?: "true" | "false" } = {}) {
+  const { data } = await api.get<DataResponse<FinanceChannelType[]>>("/finance/channel-types", { params });
+  return data.data;
+}
+
+export async function createFinanceChannelType(payload: FinanceChannelTypePayload) {
+  const { data } = await api.post<DataResponse<FinanceChannelType>>("/finance/channel-types", payload);
+  return data.data;
+}
+
+export async function updateFinanceChannelType(id: string, payload: Partial<FinanceChannelTypePayload>) {
+  const { data } = await api.patch<DataResponse<FinanceChannelType>>(`/finance/channel-types/${id}`, payload);
+  return data.data;
+}
+
+export async function deleteFinanceChannelType(id: string) {
+  const { data } = await api.delete<DataResponse<FinanceChannelType>>(`/finance/channel-types/${id}`);
+  return data.data;
+}
+
+export async function listFinanceProviders(params: { channelTypeId?: string; channelType?: FinanceChannelTypeCode; isActive?: "true" | "false" } = {}) {
+  const { data } = await api.get<DataResponse<FinanceProvider[]>>("/finance/providers", { params });
+  return data.data;
+}
+
+export async function createFinanceProvider(payload: FinanceProviderPayload) {
+  const { data } = await api.post<DataResponse<FinanceProvider>>("/finance/providers", payload);
+  return data.data;
+}
+
+export async function updateFinanceProvider(id: string, payload: Partial<Omit<FinanceProviderPayload, "channelTypeId">>) {
+  const { data } = await api.patch<DataResponse<FinanceProvider>>(`/finance/providers/${id}`, payload);
+  return data.data;
+}
+
+export async function deleteFinanceProvider(id: string) {
+  const { data } = await api.delete<DataResponse<FinanceProvider>>(`/finance/providers/${id}`);
+  return data.data;
+}
 
 export async function listFinanceAccounts(params: FinanceAccountListParams = {}) {
   const { data } = await api.get<FinanceAccountListResponse>("/finance/accounts", { params });
@@ -190,7 +256,7 @@ export async function deleteFinanceAccount(id: string) {
   return data.data;
 }
 
-export async function listFinanceTemplates(params: Partial<FinanceTemplatePayload> & { isActive?: "true" | "false" } = {}) {
+export async function listFinanceTemplates(params: FinanceTemplateListParams = {}) {
   const { data } = await api.get<DataResponse<FinanceFieldTemplate[]>>("/finance/templates", { params });
   return data.data.map(normalizeFinanceTemplate);
 }

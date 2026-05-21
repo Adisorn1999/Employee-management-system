@@ -25,6 +25,8 @@ type TranslationKey =
   | "nav.financeAccountList"
   | "nav.financeTemplates"
   | "nav.financeFieldDefinitions"
+  | "nav.financeChannelTypes"
+  | "nav.financeProviders"
   | "nav.settings"
   | "nav.accountLines"
   | "app.subtitle"
@@ -58,6 +60,8 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     "nav.financeAccountList": "รายการบัญชี",
     "nav.financeTemplates": "ตั้งค่า Template",
     "nav.financeFieldDefinitions": "ตั้งค่าหัวข้อข้อมูล",
+    "nav.financeChannelTypes": "ประเภทช่องทาง",
+    "nav.financeProviders": "ผู้ให้บริการ",
     "nav.settings": "ตั้งค่า",
     "nav.accountLines": "สายบัญชี",
     "app.subtitle": "ระบบจัดการงาน",
@@ -87,6 +91,8 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     "nav.financeAccountList": "Account List",
     "nav.financeTemplates": "Templates",
     "nav.financeFieldDefinitions": "Field Definitions",
+    "nav.financeChannelTypes": "Channel Types",
+    "nav.financeProviders": "Providers",
     "nav.settings": "Settings",
     "nav.accountLines": "Account Lines",
     "app.subtitle": "Operations Console",

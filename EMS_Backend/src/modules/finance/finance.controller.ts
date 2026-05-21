@@ -5,15 +5,21 @@ import { ZodError } from "zod";
 import { httpError, HttpError } from "../../common/utils/errors";
 import { financeService } from "./finance.service";
 import {
+  createChannelTypeSchema,
   createDefinitionSchema,
   createFinanceAccountSchema,
+  createProviderSchema,
   createTemplateSchema,
   idParamSchema,
+  listChannelTypeQuerySchema,
   listDefinitionQuerySchema,
   listFinanceAccountQuerySchema,
+  listProviderQuerySchema,
   listTemplateQuerySchema,
+  updateChannelTypeSchema,
   updateDefinitionSchema,
   updateFinanceAccountSchema,
+  updateProviderSchema,
   updateTemplateSchema,
 } from "./finance.schema";
 
@@ -77,6 +83,88 @@ export const deleteFinanceAccount: RequestHandler = async (req, res, next) => {
     const { id } = idParamSchema.parse(req.params);
     const account = await financeService.deleteAccount(id);
     res.status(200).json({ data: account });
+  } catch (err) {
+    next(handleZodError(err));
+  }
+};
+
+export const listFinanceChannelTypes: RequestHandler = async (req, res, next) => {
+  try {
+    const query = listChannelTypeQuerySchema.parse(req.query);
+    const channelTypes = await financeService.listChannelTypes(query);
+    res.status(200).json({ data: channelTypes });
+  } catch (err) {
+    next(handleZodError(err));
+  }
+};
+
+export const createFinanceChannelType: RequestHandler = async (req, res, next) => {
+  try {
+    const data = createChannelTypeSchema.parse(req.body);
+    const channelType = await financeService.createChannelType(data);
+    res.status(201).json({ data: channelType });
+  } catch (err) {
+    next(handleKnownError(err));
+  }
+};
+
+export const updateFinanceChannelType: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const data = updateChannelTypeSchema.parse(req.body);
+    const channelType = await financeService.updateChannelType(id, data);
+    res.status(200).json({ data: channelType });
+  } catch (err) {
+    next(handleKnownError(err));
+  }
+};
+
+export const deleteFinanceChannelType: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const channelType = await financeService.deleteChannelType(id);
+    res.status(200).json({ data: channelType });
+  } catch (err) {
+    next(handleZodError(err));
+  }
+};
+
+export const listFinanceProviders: RequestHandler = async (req, res, next) => {
+  try {
+    const query = listProviderQuerySchema.parse(req.query);
+    const providers = await financeService.listProviders(query);
+    res.status(200).json({ data: providers });
+  } catch (err) {
+    next(handleZodError(err));
+  }
+};
+
+export const createFinanceProvider: RequestHandler = async (req, res, next) => {
+  try {
+    const data = createProviderSchema.parse(req.body);
+    const provider = await financeService.createProvider(data);
+    res.status(201).json({ data: provider });
+  } catch (err) {
+    next(handleKnownError(err));
+  }
+};
+
+export const updateFinanceProvider: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const data = updateProviderSchema.parse(req.body);
+    const provider = await financeService.updateProvider(id, data);
+    res.status(200).json({ data: provider });
+  } catch (err) {
+    next(handleKnownError(err));
+  }
+};
+
+export const deleteFinanceProvider: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const provider = await financeService.deleteProvider(id);
+    res.status(200).json({ data: provider });
   } catch (err) {
     next(handleZodError(err));
   }

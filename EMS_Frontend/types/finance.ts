@@ -2,6 +2,7 @@ import type { PaginatedResponse } from "@/types/employee";
 
 export type FinanceAccountCategory = "PERSONAL_BANK" | "CORPORATE_BANK" | "WALLET" | "GATEWAY";
 export type FinanceAccountStatus = "ACTIVE" | "INACTIVE" | "EXPIRED" | "SUSPENDED";
+export type FinanceChannelTypeCode = "BANK" | "TRUEWALLET" | "GATEWAY";
 export type FinanceFieldType = "text" | "textarea" | "number" | "date" | "select" | "email" | "phone" | "password";
 
 export type FinanceAccountFieldValue = {
@@ -23,6 +24,28 @@ export type AccountLine = {
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type FinanceChannelType = {
+  id: string;
+  code: FinanceChannelTypeCode;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FinanceProvider = {
+  id: string;
+  channelTypeId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  channelType?: FinanceChannelType;
 };
 
 export type FinanceAccount = {
@@ -47,6 +70,10 @@ export type FinanceFieldTemplate = {
   id: string;
   category: FinanceAccountCategory;
   provider: string;
+  channelTypeId?: string | null;
+  providerId?: string | null;
+  channelType?: FinanceChannelType | null;
+  providerRecord?: FinanceProvider | null;
   name: string;
   isActive: boolean;
   createdAt: string;

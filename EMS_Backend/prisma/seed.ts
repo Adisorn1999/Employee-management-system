@@ -136,6 +136,18 @@ const positions = [
   { name: "Staff", departmentName: "Operations", description: "Operations staff" },
 ];
 
+const financeChannelTypes = [
+  { id: "finance_channel_bank", code: "BANK" as const, name: "Bank", description: "Bank accounts and bank payment channels" },
+  { id: "finance_channel_truewallet", code: "TRUEWALLET" as const, name: "TrueWallet", description: "TrueMoney wallet channels" },
+  { id: "finance_channel_gateway", code: "GATEWAY" as const, name: "Gateway", description: "Payment gateway channels" },
+];
+
+const financeProviders = [
+  { id: "finance_provider_kbank", channelTypeId: "finance_channel_bank", code: "KBANK", name: "KBANK" },
+  { id: "finance_provider_truemoney", channelTypeId: "finance_channel_truewallet", code: "TRUEWALLET", name: "TrueMoney" },
+  { id: "finance_provider_opn", channelTypeId: "finance_channel_gateway", code: "OPN", name: "OPN" },
+];
+
 const financeTemplates = [
   {
     category: "PERSONAL_BANK" as const,
@@ -200,6 +212,20 @@ const financeTemplates = [
 
 function seedDate(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
+}
+
+function financeChannelTypeIdForTemplate(category: (typeof financeTemplates)[number]["category"]) {
+  if (category === "GATEWAY") return "finance_channel_gateway";
+  if (category === "WALLET") return "finance_channel_truewallet";
+  return "finance_channel_bank";
+}
+
+function financeProviderIdForTemplate(provider: string) {
+  const normalized = provider.trim().toUpperCase();
+  if (normalized === "KBANK") return "finance_provider_kbank";
+  if (normalized === "TRUEWALLET" || normalized === "TRUEMONEY") return "finance_provider_truemoney";
+  if (normalized === "OPN") return "finance_provider_opn";
+  return undefined;
 }
 
 async function main() {
@@ -457,7 +483,43 @@ async function main() {
     });
   }
 
+  for (const channelType of financeChannelTypes) {
+    await prisma.financeChannelType.upsert({
+      where: { code: channelType.code },
+      update: {
+        name: channelType.name,
+        description: channelType.description,
+        isActive: true,
+      },
+      create: {
+        ...channelType,
+        isActive: true,
+      },
+    });
+  }
+
+  for (const provider of financeProviders) {
+    await prisma.financeProvider.upsert({
+      where: {
+        channelTypeId_code: {
+          channelTypeId: provider.channelTypeId,
+          code: provider.code,
+        },
+      },
+      update: {
+        name: provider.name,
+        isActive: true,
+      },
+      create: {
+        ...provider,
+        isActive: true,
+      },
+    });
+  }
+
   for (const templateSeed of financeTemplates) {
+    const channelTypeId = financeChannelTypeIdForTemplate(templateSeed.category);
+    const providerId = financeProviderIdForTemplate(templateSeed.provider);
     const template = await prisma.financeFieldTemplate.upsert({
       where: {
         category_provider_name: {
@@ -467,11 +529,15 @@ async function main() {
         },
       },
       update: {
+        channelTypeId,
+        providerId,
         isActive: true,
       },
       create: {
         category: templateSeed.category,
         provider: templateSeed.provider,
+        channelTypeId,
+        providerId,
         name: templateSeed.name,
         isActive: true,
       },

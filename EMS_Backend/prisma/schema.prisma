@@ -103,6 +103,12 @@ enum FinanceAccountStatus {
   SUSPENDED
 }
 
+enum FinanceChannelTypeCode {
+  BANK
+  TRUEWALLET
+  GATEWAY
+}
+
 enum FinanceFieldType {
   text
   textarea
@@ -295,18 +301,60 @@ model FinanceAccount {
   @@map("finance_accounts")
 }
 
+model FinanceChannelType {
+  id          String                 @id @default(uuid())
+  code        FinanceChannelTypeCode @unique
+  name        String
+  description String?
+  isActive    Boolean                @default(true)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  providers FinanceProvider[]
+  templates FinanceFieldTemplate[]
+
+  @@index([isActive])
+  @@map("finance_channel_types")
+}
+
+model FinanceProvider {
+  id            String  @id @default(uuid())
+  channelTypeId String
+  code          String
+  name          String
+  description   String?
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  channelType FinanceChannelType @relation(fields: [channelTypeId], references: [id], onDelete: Restrict)
+  templates   FinanceFieldTemplate[]
+
+  @@unique([channelTypeId, code])
+  @@index([channelTypeId])
+  @@index([isActive])
+  @@map("finance_providers")
+}
+
 model FinanceFieldTemplate {
-  id        String                 @id @default(uuid())
-  category  FinanceAccountCategory
-  provider  String
-  name      String
-  isActive  Boolean                @default(true)
-  createdAt DateTime               @default(now())
+  id            String                 @id @default(uuid())
+  category      FinanceAccountCategory
+  provider      String
+  channelTypeId String?
+  providerId    String?
+  name          String
+  isActive      Boolean                @default(true)
+  createdAt     DateTime               @default(now())
 
   fieldDefinitions FinanceFieldDefinition[]
+  channelType      FinanceChannelType? @relation(fields: [channelTypeId], references: [id], onDelete: Restrict)
+  providerRecord   FinanceProvider?    @relation(fields: [providerId], references: [id], onDelete: Restrict)
 
   @@unique([category, provider, name])
+  @@unique([providerId, name])
   @@index([category, provider])
+  @@index([channelTypeId])
+  @@index([providerId])
   @@index([isActive])
   @@map("finance_field_templates")
 }

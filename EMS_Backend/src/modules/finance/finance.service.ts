@@ -1,17 +1,23 @@
-import { FinanceAccountCategory, FinanceAccountStatus, Prisma } from "@prisma/client";
+import { FinanceAccountCategory, FinanceAccountStatus, FinanceChannelTypeCode, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { httpError } from "../../common/utils/errors";
 import prisma from "../../config/prisma";
 import {
   createDefinitionSchema,
+  createChannelTypeSchema,
   createFinanceAccountSchema,
+  createProviderSchema,
   createTemplateSchema,
+  listChannelTypeQuerySchema,
   listDefinitionQuerySchema,
   listFinanceAccountQuerySchema,
+  listProviderQuerySchema,
   listTemplateQuerySchema,
+  updateChannelTypeSchema,
   updateDefinitionSchema,
   updateFinanceAccountSchema,
+  updateProviderSchema,
   updateTemplateSchema,
 } from "./finance.schema";
 
@@ -21,6 +27,12 @@ type ListAccountQuery = z.infer<typeof listFinanceAccountQuerySchema>;
 type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 type ListTemplateQuery = z.infer<typeof listTemplateQuerySchema>;
+type CreateChannelTypeInput = z.infer<typeof createChannelTypeSchema>;
+type UpdateChannelTypeInput = z.infer<typeof updateChannelTypeSchema>;
+type ListChannelTypeQuery = z.infer<typeof listChannelTypeQuerySchema>;
+type CreateProviderInput = z.infer<typeof createProviderSchema>;
+type UpdateProviderInput = z.infer<typeof updateProviderSchema>;
+type ListProviderQuery = z.infer<typeof listProviderQuerySchema>;
 type CreateDefinitionInput = z.infer<typeof createDefinitionSchema>;
 type UpdateDefinitionInput = z.infer<typeof updateDefinitionSchema>;
 type ListDefinitionQuery = z.infer<typeof listDefinitionQuerySchema>;
@@ -32,6 +44,10 @@ const accountInclude = {
 } satisfies Prisma.FinanceAccountInclude;
 
 const templateInclude = {
+  channelType: true,
+  providerRecord: {
+    include: { channelType: true },
+  },
   fieldDefinitions: {
     orderBy: [{ sortOrder: "asc" }, { fieldKey: "asc" }],
   },
@@ -39,6 +55,18 @@ const templateInclude = {
 
 function normalizeProvider(provider?: string) {
   return provider?.trim().toUpperCase();
+}
+
+function channelTypeForCategory(category: FinanceAccountCategory) {
+  if (category === FinanceAccountCategory.GATEWAY) return FinanceChannelTypeCode.GATEWAY;
+  if (category === FinanceAccountCategory.WALLET) return FinanceChannelTypeCode.TRUEWALLET;
+  return FinanceChannelTypeCode.BANK;
+}
+
+function defaultCategoryForChannelType(code: FinanceChannelTypeCode) {
+  if (code === FinanceChannelTypeCode.GATEWAY) return FinanceAccountCategory.GATEWAY;
+  if (code === FinanceChannelTypeCode.TRUEWALLET) return FinanceAccountCategory.WALLET;
+  return FinanceAccountCategory.CORPORATE_BANK;
 }
 
 function accountWhere(query: ListAccountQuery): Prisma.FinanceAccountWhereInput {
@@ -61,7 +89,10 @@ function accountWhere(query: ListAccountQuery): Prisma.FinanceAccountWhereInput 
 function templateWhere(query: ListTemplateQuery): Prisma.FinanceFieldTemplateWhereInput {
   return {
     ...(query.category && { category: query.category }),
+    ...(query.channelTypeId && { channelTypeId: query.channelTypeId }),
+    ...(query.providerId && { providerId: query.providerId }),
     ...(query.provider && { provider: normalizeProvider(query.provider) }),
+    ...(query.channelType && { channelType: { code: query.channelType } }),
     ...(query.isActive !== undefined && { isActive: query.isActive === "true" }),
   };
 }
@@ -76,15 +107,75 @@ function definitionWhere(query: ListDefinitionQuery): Prisma.FinanceFieldDefinit
         ...(query.provider && { provider: normalizeProvider(query.provider) }),
       },
     }),
+    ...((query.channelTypeId || query.channelType || query.providerId) && {
+      template: {
+        ...(query.category && { category: query.category }),
+        ...(query.provider && { provider: normalizeProvider(query.provider) }),
+        ...(query.channelTypeId && { channelTypeId: query.channelTypeId }),
+        ...(query.providerId && { providerId: query.providerId }),
+        ...(query.channelType && { channelType: { code: query.channelType } }),
+      },
+    }),
   };
 }
 
-async function validateRequiredFields(category: FinanceAccountCategory, provider: string, fields: CreateAccountInput["fields"]) {
-  const template = await prisma.financeFieldTemplate.findFirst({
-    where: { category, provider, isActive: true },
-    include: templateInclude,
-    orderBy: { createdAt: "desc" },
+function channelTypeWhere(query: ListChannelTypeQuery): Prisma.FinanceChannelTypeWhereInput {
+  return {
+    ...(query.isActive !== undefined && { isActive: query.isActive === "true" }),
+  };
+}
+
+function providerWhere(query: ListProviderQuery): Prisma.FinanceProviderWhereInput {
+  return {
+    ...(query.channelTypeId && { channelTypeId: query.channelTypeId }),
+    ...(query.channelType && { channelType: { code: query.channelType } }),
+    ...(query.isActive !== undefined && { isActive: query.isActive === "true" }),
+  };
+}
+
+async function getProviderForTemplate(providerId: string) {
+  const provider = await prisma.financeProvider.findUnique({
+    where: { id: providerId },
+    include: { channelType: true },
   });
+  if (!provider) {
+    throw httpError("Finance provider not found", 404);
+  }
+  if (!provider.isActive || !provider.channelType.isActive) {
+    throw httpError("Finance provider is inactive", 400);
+  }
+  return provider;
+}
+
+async function validateRequiredFields(category: FinanceAccountCategory, provider: string, fields: CreateAccountInput["fields"]) {
+  const channelType = channelTypeForCategory(category);
+  const normalizedProvider = normalizeProvider(provider);
+  const providerRecord = await prisma.financeProvider.findFirst({
+    where: {
+      code: normalizedProvider,
+      channelType: { code: channelType },
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  const template =
+    (providerRecord &&
+      (await prisma.financeFieldTemplate.findFirst({
+        where: { category, providerId: providerRecord.id, isActive: true },
+        include: templateInclude,
+        orderBy: { createdAt: "desc" },
+      }))) ||
+    (providerRecord &&
+      (await prisma.financeFieldTemplate.findFirst({
+        where: { providerId: providerRecord.id, isActive: true },
+        include: templateInclude,
+        orderBy: { createdAt: "desc" },
+      }))) ||
+    (await prisma.financeFieldTemplate.findFirst({
+      where: { category, provider: normalizedProvider, isActive: true },
+      include: templateInclude,
+      orderBy: { createdAt: "desc" },
+    }));
 
   if (!template) {
     return;
@@ -104,6 +195,99 @@ async function validateRequiredFields(category: FinanceAccountCategory, provider
 export const financeService = {
   accountInclude,
   templateInclude,
+
+  listChannelTypes: (query: ListChannelTypeQuery) =>
+    prisma.financeChannelType.findMany({
+      where: channelTypeWhere(query),
+      orderBy: [{ code: "asc" }],
+    }),
+
+  getChannelType: async (id: string) => {
+    const channelType = await prisma.financeChannelType.findUnique({ where: { id } });
+    if (!channelType) {
+      throw httpError("Finance channel type not found", 404);
+    }
+    return channelType;
+  },
+
+  createChannelType: (data: CreateChannelTypeInput) =>
+    prisma.financeChannelType.upsert({
+      where: { code: data.code },
+      update: {
+        name: data.name,
+        description: data.description,
+        isActive: data.isActive,
+      },
+      create: data,
+    }),
+
+  updateChannelType: async (id: string, data: UpdateChannelTypeInput) => {
+    await financeService.getChannelType(id);
+    return prisma.financeChannelType.update({
+      where: { id },
+      data,
+    });
+  },
+
+  deleteChannelType: async (id: string) => {
+    await financeService.getChannelType(id);
+    return prisma.financeChannelType.update({
+      where: { id },
+      data: { isActive: false },
+    });
+  },
+
+  listProviders: (query: ListProviderQuery) =>
+    prisma.financeProvider.findMany({
+      where: providerWhere(query),
+      include: { channelType: true },
+      orderBy: [{ channelType: { code: "asc" } }, { name: "asc" }],
+    }),
+
+  getProvider: async (id: string) => {
+    const provider = await prisma.financeProvider.findUnique({ where: { id }, include: { channelType: true } });
+    if (!provider) {
+      throw httpError("Finance provider not found", 404);
+    }
+    return provider;
+  },
+
+  createProvider: async (data: CreateProviderInput) => {
+    await financeService.getChannelType(data.channelTypeId);
+    return prisma.financeProvider.upsert({
+      where: {
+        channelTypeId_code: {
+          channelTypeId: data.channelTypeId,
+          code: data.code,
+        },
+      },
+      update: {
+        name: data.name,
+        description: data.description,
+        isActive: data.isActive,
+      },
+      create: data,
+      include: { channelType: true },
+    });
+  },
+
+  updateProvider: async (id: string, data: UpdateProviderInput) => {
+    await financeService.getProvider(id);
+    return prisma.financeProvider.update({
+      where: { id },
+      data,
+      include: { channelType: true },
+    });
+  },
+
+  deleteProvider: async (id: string) => {
+    await financeService.getProvider(id);
+    return prisma.financeProvider.update({
+      where: { id },
+      data: { isActive: false },
+      include: { channelType: true },
+    });
+  },
 
   listAccounts: async (query: ListAccountQuery) => {
     const where = accountWhere(query);
@@ -236,24 +420,68 @@ export const financeService = {
     return template;
   },
 
-  resolveTemplate: async (category: FinanceAccountCategory, provider: string) =>
-    prisma.financeFieldTemplate.findFirst({
-      where: { category, provider: normalizeProvider(provider), isActive: true },
-      include: templateInclude,
-      orderBy: { createdAt: "desc" },
-    }),
+  resolveTemplate: async (category: FinanceAccountCategory, provider: string) => {
+    const channelType = channelTypeForCategory(category);
+    const normalizedProvider = normalizeProvider(provider);
+    const providerRecord = await prisma.financeProvider.findFirst({
+      where: {
+        code: normalizedProvider,
+        channelType: { code: channelType },
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    return (
+      (providerRecord &&
+        (await prisma.financeFieldTemplate.findFirst({
+          where: { category, providerId: providerRecord.id, isActive: true },
+          include: templateInclude,
+          orderBy: { createdAt: "desc" },
+        }))) ||
+      (providerRecord &&
+        (await prisma.financeFieldTemplate.findFirst({
+          where: { providerId: providerRecord.id, isActive: true },
+          include: templateInclude,
+          orderBy: { createdAt: "desc" },
+        }))) ||
+      prisma.financeFieldTemplate.findFirst({
+        where: { category, provider: normalizedProvider, isActive: true },
+        include: templateInclude,
+        orderBy: { createdAt: "desc" },
+      })
+    );
+  },
 
-  createTemplate: (data: CreateTemplateInput) =>
-    prisma.financeFieldTemplate.create({
-      data,
+  createTemplate: async (data: CreateTemplateInput) => {
+    const provider = await getProviderForTemplate(data.providerId);
+    return prisma.financeFieldTemplate.create({
+      data: {
+        category: data.category ?? defaultCategoryForChannelType(provider.channelType.code),
+        provider: provider.code,
+        channelTypeId: provider.channelTypeId,
+        providerId: provider.id,
+        name: data.name,
+        isActive: data.isActive,
+      },
       include: templateInclude,
-    }),
+    });
+  },
 
   updateTemplate: async (id: string, data: UpdateTemplateInput) => {
     await financeService.getTemplate(id);
+    const provider = data.providerId ? await getProviderForTemplate(data.providerId) : null;
     return prisma.financeFieldTemplate.update({
       where: { id },
-      data,
+      data: {
+        ...(provider && {
+          category: data.category ?? defaultCategoryForChannelType(provider.channelType.code),
+          provider: provider.code,
+          channelTypeId: provider.channelTypeId,
+          providerId: provider.id,
+        }),
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+      },
       include: templateInclude,
     });
   },

@@ -47,6 +47,8 @@ const financeItems = [
   { href: "/finance/accounts", labelKey: "nav.financeAccountList" as const, icon: List },
   { href: "/finance/templates", labelKey: "nav.financeTemplates" as const, icon: Settings },
   { href: "/finance/field-definitions", labelKey: "nav.financeFieldDefinitions" as const, icon: List },
+  { href: "/finance/channel-types", labelKey: "nav.financeChannelTypes" as const, icon: Settings },
+  { href: "/finance/providers", labelKey: "nav.financeProviders" as const, icon: CreditCard },
 ];
 
 const settingsItems = [

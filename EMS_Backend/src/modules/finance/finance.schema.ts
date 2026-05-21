@@ -1,6 +1,7 @@
-import { FinanceAccountCategory, FinanceAccountStatus, FinanceFieldType } from "@prisma/client";
+import { FinanceAccountCategory, FinanceAccountStatus, FinanceChannelTypeCode, FinanceFieldType } from "@prisma/client";
 import { z } from "zod";
 
+const idSchema = (fieldName: string) => z.string().trim().min(1, `${fieldName} is required`).max(120);
 const uuidSchema = (fieldName: string) => z.string().uuid(`${fieldName} must be a valid UUID`);
 const optionalText = (max = 500) => z.string().trim().max(max).optional().or(z.literal("").transform(() => undefined));
 const providerSchema = z.string().trim().min(1).max(60).transform((value) => value.toUpperCase());
@@ -11,7 +12,7 @@ const dateSchema = z
   .transform((value) => new Date(`${value}T00:00:00.000Z`));
 
 export const idParamSchema = z.object({
-  id: uuidSchema("id"),
+  id: idSchema("id"),
 });
 
 export const listFinanceAccountQuerySchema = z.object({
@@ -50,13 +51,18 @@ export const updateFinanceAccountSchema = createFinanceAccountSchema.partial().e
 
 export const listTemplateQuerySchema = z.object({
   category: z.nativeEnum(FinanceAccountCategory).optional(),
+  channelTypeId: idSchema("channelTypeId").optional(),
+  channelType: z.nativeEnum(FinanceChannelTypeCode).optional(),
+  providerId: idSchema("providerId").optional(),
   provider: z.string().trim().optional(),
   isActive: z.enum(["true", "false"]).optional(),
 });
 
 export const createTemplateSchema = z.object({
-  category: z.nativeEnum(FinanceAccountCategory),
-  provider: providerSchema,
+  category: z.nativeEnum(FinanceAccountCategory).optional(),
+  channelTypeId: idSchema("channelTypeId").optional(),
+  providerId: idSchema("providerId"),
+  provider: providerSchema.optional(),
   name: z.string().trim().min(1).max(160),
   isActive: z.boolean().default(true),
 });
@@ -64,14 +70,46 @@ export const createTemplateSchema = z.object({
 export const updateTemplateSchema = createTemplateSchema.partial();
 
 export const listDefinitionQuerySchema = z.object({
-  templateId: uuidSchema("templateId").optional(),
+  templateId: idSchema("templateId").optional(),
   category: z.nativeEnum(FinanceAccountCategory).optional(),
+  channelTypeId: idSchema("channelTypeId").optional(),
+  channelType: z.nativeEnum(FinanceChannelTypeCode).optional(),
+  providerId: idSchema("providerId").optional(),
   provider: z.string().trim().optional(),
   isActive: z.enum(["true", "false"]).optional(),
 });
 
+export const listChannelTypeQuerySchema = z.object({
+  isActive: z.enum(["true", "false"]).optional(),
+});
+
+export const createChannelTypeSchema = z.object({
+  code: z.nativeEnum(FinanceChannelTypeCode),
+  name: z.string().trim().min(1).max(120),
+  description: optionalText(500),
+  isActive: z.boolean().default(true),
+});
+
+export const updateChannelTypeSchema = createChannelTypeSchema.partial();
+
+export const listProviderQuerySchema = z.object({
+  channelTypeId: idSchema("channelTypeId").optional(),
+  channelType: z.nativeEnum(FinanceChannelTypeCode).optional(),
+  isActive: z.enum(["true", "false"]).optional(),
+});
+
+export const createProviderSchema = z.object({
+  channelTypeId: idSchema("channelTypeId"),
+  code: providerSchema,
+  name: z.string().trim().min(1).max(120),
+  description: optionalText(500),
+  isActive: z.boolean().default(true),
+});
+
+export const updateProviderSchema = createProviderSchema.partial().omit({ channelTypeId: true });
+
 export const createDefinitionSchema = z.object({
-  templateId: uuidSchema("templateId"),
+  templateId: idSchema("templateId"),
   fieldKey: z.string().trim().min(1).max(100),
   labelTh: z.string().trim().min(1).max(160),
   labelEn: z.string().trim().min(1).max(160),
