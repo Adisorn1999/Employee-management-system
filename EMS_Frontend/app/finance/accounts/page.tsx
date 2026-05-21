@@ -1,7 +1,7 @@
 "use client";
 
 import { AxiosError } from "axios";
-import { ArrowDown, ArrowUp, EyeOff, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +87,13 @@ function mergeAccountLineField(fields: FinanceAccountFieldValue[], accountLineId
   ];
 }
 
+function mergeTemplateFieldValues(fields: FinanceAccountFieldValue[], definitions: FinanceFieldDefinition[]) {
+  const activeDefinitions = definitions.filter((definition) => definition.isActive);
+  const existingKeys = new Set(fields.map((field) => field.fieldKey));
+  const missingFields = activeDefinitions.filter((definition) => !existingKeys.has(definition.fieldKey)).map(definitionToValue);
+  return [...fields, ...missingFields].map((field, index) => ({ ...field, sortOrder: index + 1 }));
+}
+
 export default function FinanceAccountsPage() {
   const { toast } = useToast();
   const [keyword, setKeyword] = useState("");
@@ -97,6 +104,7 @@ export default function FinanceAccountsPage() {
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<FinanceAccount | null>(null);
+  const [detailAccount, setDetailAccount] = useState<FinanceAccount | null>(null);
 
   const params = useMemo(
     () => ({
@@ -130,6 +138,10 @@ export default function FinanceAccountsPage() {
   function openEdit(account: FinanceAccount) {
     setSelectedAccount(account);
     setDialogOpen(true);
+  }
+
+  function openDetail(account: FinanceAccount) {
+    setDetailAccount(account);
   }
 
   async function saveAccount(payload: FinanceAccountPayload) {
@@ -200,7 +212,7 @@ export default function FinanceAccountsPage() {
                 <TableHead>สายบัญชี</TableHead>
                 <TableHead>สถานะ</TableHead>
                 <TableHead>วันหมดอายุ</TableHead>
-                <TableHead className="w-28 text-right">จัดการ</TableHead>
+                <TableHead className="w-48 text-right">จัดการ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -218,6 +230,10 @@ export default function FinanceAccountsPage() {
                   <TableCell>{formatDate(account.expireDate)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" aria-label="ดูรายละเอียด" onClick={() => openDetail(account)}>
+                        <Eye className="h-4 w-4" />
+                        ดูรายละเอียด
+                      </Button>
                       <Button size="icon" variant="outline" aria-label="แก้ไขบัญชี" onClick={() => openEdit(account)}><Pencil className="h-4 w-4" /></Button>
                       <Button size="icon" variant="outline" aria-label="ปิดใช้งานบัญชี" onClick={() => deactivateAccount(account)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
@@ -239,7 +255,298 @@ export default function FinanceAccountsPage() {
       </Card>
 
       <FinanceAccountDialog open={dialogOpen} account={selectedAccount} accountLines={accountLines} onOpenChange={setDialogOpen} onSubmit={saveAccount} />
+      <FinanceAccountDetailDialog
+        open={Boolean(detailAccount)}
+        account={detailAccount}
+        accountLinesById={accountLinesById}
+        onOpenChange={(open) => {
+          if (!open) setDetailAccount(null);
+        }}
+      />
     </DashboardShell>
+  );
+}
+
+const detailFieldAliases: Record<string, string[]> = {
+  website: ["website", "site", "web", "url", "prefix"],
+  usageType: ["usage_type", "usage_target", "usage", "use_type", "lp_usage", "account_type", "ip_usage"],
+  ownerType: ["owner_type", "account_owner_type", "ownership_type"],
+  branch: ["branch", "bank_branch"],
+  atm: ["atm", "atm_status"],
+  atmCardNumber: ["atm_card_number", "atm_no", "atm_number", "card_atm_number"],
+  dailyLimit: ["daily_limit", "limit_per_day", "daily_transfer_limit"],
+  nationalId: ["national_id", "citizen_id", "id_card", "id_card_number"],
+  birthDate: ["birth_date", "birthday", "date_of_birth", "dob"],
+  phone: ["phone", "mobile", "mobile_phone", "wallet_phone"],
+  sim: ["sim", "sim_phone", "sim_ais", "sim_number"],
+  email: ["email"],
+  address: ["address", "owner_address"],
+  appCode: ["app_code", "app_id", "app_password", "application_code"],
+  simExpireDate: ["sim_expire_date", "sim_expiry_date", "sim_expired_date"],
+  purchaseDate: ["purchase_date", "buy_date", "bought_date"],
+  releaseDate: ["release_date", "released_date", "available_date"],
+};
+
+const detailLabelAliases: Record<string, string[]> = {
+  website: ["เว็บไซต์", "Prefix", "ใช้งานกับ"],
+  usageType: ["ประเภทใช้งาน", "ประเภทบัญชี", "IP ใช้งาน", "ใช้งาน"],
+  ownerType: ["ประเภทเจ้าของ", "Owner type", "ประเภทเจ้าของบัญชี"],
+  branch: ["สาขา"],
+  atm: ["ATM"],
+  atmCardNumber: ["เลขบัตร ATM"],
+  dailyLimit: ["วงเงินต่อวัน"],
+  nationalId: ["เลขบัตรประชาชน"],
+  birthDate: ["วัน/เดือน/ปีเกิด", "วันเกิด"],
+  phone: ["เบอร์", "เบอร์โทร"],
+  sim: ["ซิม", "เบอร์ซิม", "เบอร์ซิม AIS"],
+  email: ["Email"],
+  address: ["ที่อยู่"],
+  appCode: ["รหัส APP"],
+  simExpireDate: ["วันหมดอายุซิม"],
+  purchaseDate: ["วันที่ซื้อ"],
+  releaseDate: ["วันที่ปล่อยใช้งาน"],
+};
+
+const reservedDetailFieldKeys = [
+  "site",
+  "siteId",
+  "accountLine",
+  "accountLineId",
+  "usageCategory",
+  "usageCategoryId",
+  "ownerType",
+  "status",
+  "bankName",
+  "bankProvider",
+  "accountName",
+  "accountNumber",
+  "branch",
+  "atm",
+  "atmCardNumber",
+  "dailyLimit",
+  "nationalId",
+  "birthDate",
+  "phone",
+  "simProvider",
+  "email",
+  "address",
+  "appPassword",
+  "appCode",
+  "simExpiredAt",
+  "purchasedAt",
+  "activatedAt",
+  "releasedAt",
+  "note",
+  ACCOUNT_LINE_FIELD_KEY,
+  ...Object.values(detailFieldAliases).flat(),
+].map(normalizeFieldKey);
+
+function normalizeFieldKey(value: string) {
+  return value.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+function displayValue(value?: string | null) {
+  const normalized = typeof value === "string" ? value.trim() : value;
+  return normalized || "-";
+}
+
+function getAdditionalDetailFields(account: FinanceAccount) {
+  const reservedKeys = new Set(reservedDetailFieldKeys);
+  return (account.fieldValues ?? [])
+    .filter((field) => field.isActive !== false && !reservedKeys.has(normalizeFieldKey(field.fieldKey)))
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map((field, index) => {
+      const fieldWithOptionalLabel = field as FinanceAccountFieldValue & { label?: string; title?: string };
+      const label =
+        fieldWithOptionalLabel.label?.trim() ||
+        fieldWithOptionalLabel.title?.trim() ||
+        field.labelSnapshot?.trim() ||
+        field.fieldKey?.trim() ||
+        `ข้อมูลเพิ่มเติม ${index + 1}`;
+      return {
+        label,
+        value: field.value,
+        copyKey: `custom:${field.id || field.fieldKey || index}`,
+      };
+    });
+}
+
+function getDetailFieldValue(account: FinanceAccount, aliasName: keyof typeof detailFieldAliases) {
+  const keys = detailFieldAliases[aliasName].map((key) => key.toLowerCase());
+  const labels = detailLabelAliases[aliasName].map((label) => label.toLowerCase());
+  const field = account.fieldValues?.find((item) => {
+    const fieldKey = item.fieldKey.toLowerCase();
+    const label = item.labelSnapshot.toLowerCase();
+    return keys.includes(fieldKey) || labels.includes(label);
+  });
+  return field?.value ?? "";
+}
+
+function formatMaybeDate(value?: string | null) {
+  if (!value) return "-";
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return displayValue(value);
+  return formatDate(value);
+}
+
+function removeDuplicateUsageValue(usageValue: string, websiteValue: string) {
+  if (!usageValue || !websiteValue) return usageValue;
+  return usageValue.trim() === websiteValue.trim() ? "" : usageValue;
+}
+
+function FinanceAccountDetailDialog({
+  open,
+  account,
+  accountLinesById,
+  onOpenChange,
+}: {
+  open: boolean;
+  account: FinanceAccount | null;
+  accountLinesById: Map<string, AccountLine>;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  if (!account) {
+    return <Dialog open={open} onOpenChange={onOpenChange} />;
+  }
+
+  async function copyValue(label: string, value: string, key: string) {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) return;
+    await navigator.clipboard.writeText(normalizedValue);
+    setCopiedKey(key);
+    toast({ title: "คัดลอกแล้ว", description: label });
+    window.setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1500);
+  }
+
+  const websiteValue = getDetailFieldValue(account, "website");
+  const usageTypeValue = removeDuplicateUsageValue(getDetailFieldValue(account, "usageType"), websiteValue);
+  const additionalFields = getAdditionalDetailFields(account);
+
+  const detailSections = [
+    {
+      title: "ข้อมูลการใช้งาน",
+      fields: [
+        { label: "เว็บไซต์", value: websiteValue },
+        { label: "สายบัญชี", value: getAccountLineLabel(account, accountLinesById) },
+        { label: "ประเภทใช้งาน", value: usageTypeValue },
+        { label: "ประเภทเจ้าของ", value: getDetailFieldValue(account, "ownerType") },
+        { label: "สถานะ", value: statusLabel[account.status] },
+      ],
+    },
+    {
+      title: "ข้อมูลบัญชีธนาคาร",
+      fields: [
+        { label: "ธนาคาร", value: account.provider },
+        { label: "ชื่อบัญชี", value: account.accountName },
+        { label: "เลขบัญชี", value: account.accountNumber, copyKey: "accountNumber" },
+        { label: "สาขา", value: getDetailFieldValue(account, "branch") },
+        { label: "ATM", value: getDetailFieldValue(account, "atm") },
+        { label: "เลขบัตร ATM", value: getDetailFieldValue(account, "atmCardNumber") },
+        { label: "วงเงินต่อวัน", value: getDetailFieldValue(account, "dailyLimit") },
+      ],
+    },
+    {
+      title: "ข้อมูลเจ้าของบัญชี",
+      fields: [
+        { label: "เลขบัตรประชาชน", value: getDetailFieldValue(account, "nationalId") },
+        { label: "วัน/เดือน/ปีเกิด", value: formatMaybeDate(getDetailFieldValue(account, "birthDate")) },
+        { label: "เบอร์", value: getDetailFieldValue(account, "phone"), copyKey: "phone" },
+        { label: "ซิม", value: getDetailFieldValue(account, "sim") },
+        { label: "Email", value: getDetailFieldValue(account, "email"), copyKey: "email" },
+        { label: "ที่อยู่", value: getDetailFieldValue(account, "address") },
+      ],
+    },
+    {
+      title: "ข้อมูลระบบ",
+      fields: [
+        { label: "รหัส APP", value: getDetailFieldValue(account, "appCode"), copyKey: "appCode" },
+        { label: "วันหมดอายุซิม", value: formatMaybeDate(getDetailFieldValue(account, "simExpireDate")) },
+        { label: "วันที่ซื้อ", value: formatMaybeDate(getDetailFieldValue(account, "purchaseDate")) },
+        { label: "วันที่เริ่มใช้งาน", value: formatMaybeDate(account.startDate) },
+        { label: "วันที่ปล่อยใช้งาน", value: formatMaybeDate(getDetailFieldValue(account, "releaseDate")) },
+      ],
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>รายละเอียดบัญชีธนาคาร</DialogTitle>
+          <DialogDescription>{displayValue(account.displayName)}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {detailSections.map((section) => (
+            <section key={section.title} className="rounded-md border p-4">
+              <h3 className="text-base font-semibold tracking-normal">{section.title}</h3>
+              <div className="mt-4 divide-y">
+                {section.fields.map((field) => {
+                  const value = displayValue(field.value);
+                  const canCopy = Boolean(field.copyKey && value !== "-");
+                  const isCopied = copiedKey === field.copyKey;
+                  return (
+                    <div key={field.label} className="grid gap-2 py-3 sm:grid-cols-[150px_1fr_auto] sm:items-start">
+                      <div className="text-sm text-muted-foreground">{field.label}</div>
+                      <div className="min-w-0 whitespace-pre-wrap break-words text-sm font-medium">{value}</div>
+                      {field.copyKey ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={!canCopy}
+                          aria-label={`คัดลอก${field.label}`}
+                          onClick={() => copyValue(field.label, value, field.copyKey)}
+                        >
+                          {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+          <section className="rounded-md border p-4 lg:col-span-2">
+            <h3 className="text-base font-semibold tracking-normal">ข้อมูลเพิ่มเติม</h3>
+            {additionalFields.length ? (
+              <div className="mt-4 grid gap-x-6 md:grid-cols-2">
+                {additionalFields.map((field) => {
+                  const value = displayValue(field.value);
+                  const isCopied = copiedKey === field.copyKey;
+                  return (
+                    <div key={field.copyKey} className="grid gap-2 border-b py-3 sm:grid-cols-[150px_1fr_auto] sm:items-start">
+                      <div className="text-sm text-muted-foreground">{field.label}</div>
+                      <div className="min-w-0 whitespace-pre-wrap break-words text-sm font-medium">{value}</div>
+                      {value !== "-" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label={`คัดลอก${field.label}`}
+                          onClick={() => copyValue(field.label, value, field.copyKey)}
+                        >
+                          {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-md border border-dashed p-4 text-sm text-muted-foreground">ไม่มีข้อมูลเพิ่มเติม</div>
+            )}
+          </section>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>ปิด</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -276,8 +583,14 @@ function FinanceAccountDialog({ open, account, accountLines, onOpenChange, onSub
   }, [account, open]);
 
   useEffect(() => {
-    if (!open || isEdit || !templateQuery.data) return;
-    setFields(templateQuery.data.fieldDefinitions.filter((field) => field.isActive).map(definitionToValue));
+    const template = templateQuery.data;
+    if (!open || !template) return;
+    setFields((items) => {
+      if (!isEdit && items.length === 0) {
+        return template.fieldDefinitions.filter((field) => field.isActive).map(definitionToValue);
+      }
+      return mergeTemplateFieldValues(items, template.fieldDefinitions);
+    });
   }, [isEdit, open, templateQuery.data]);
 
   function updateField(index: number, patch: Partial<FinanceAccountFieldValue>) {
