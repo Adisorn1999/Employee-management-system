@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Clock3, LayoutDashboard, Users } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/employees", label: "Employees", icon: Users },
-  { href: "/shifts", label: "Shifts", icon: Clock3 },
-  { href: "/reports/attendance", label: "Reports", icon: BarChart3 },
+  { href: "/dashboard", labelKey: "nav.dashboard" as const, icon: LayoutDashboard },
+  { href: "/employees", labelKey: "nav.employees" as const, icon: Users },
+  { href: "/shifts", labelKey: "nav.workManagement" as const, icon: Clock3 },
+  { href: "/reports/attendance", labelKey: "nav.reports" as const, icon: BarChart3 },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav className="grid grid-cols-4 gap-1 border-b bg-card p-2 md:hidden">
@@ -38,7 +40,7 @@ export function MobileNav() {
             )}
           >
             <Icon className="h-4 w-4" />
-            <span className="max-w-full truncate">{item.label}</span>
+            <span className="max-w-full truncate">{t(item.labelKey)}</span>
           </Link>
         );
       })}
