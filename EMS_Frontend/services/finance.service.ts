@@ -103,6 +103,15 @@ function writeStoredAccountLines(lines: AccountLine[]) {
   window.localStorage.setItem(ACCOUNT_LINES_STORAGE_KEY, JSON.stringify(lines));
 }
 
+function readableLocalId(prefix: string, value: string) {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `${prefix}_${slug || "item"}_${Date.now().toString(36)}`;
+}
+
 function normalizeFinanceDefinition(definition: FinanceFieldDefinition): FinanceFieldDefinition {
   if (definition.fieldKey !== "lp_usage") return definition;
   return {
@@ -198,7 +207,7 @@ export async function createAccountLine(payload: AccountLinePayload) {
     if (!isAccountLineApiMissing(error)) throw error;
     const now = new Date().toISOString();
     const line: AccountLine = {
-      id: crypto.randomUUID(),
+      id: readableLocalId("account_line", payload.code || payload.name),
       name: payload.name,
       code: payload.code,
       description: payload.description,

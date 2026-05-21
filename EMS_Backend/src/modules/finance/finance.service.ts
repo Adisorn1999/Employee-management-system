@@ -57,6 +57,42 @@ function normalizeProvider(provider?: string) {
   return provider?.trim().toUpperCase();
 }
 
+function slugId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function uniqueSuffix() {
+  return Date.now().toString(36);
+}
+
+function channelTypeIdFromCode(code: FinanceChannelTypeCode) {
+  return `finance_channel_${slugId(code)}`;
+}
+
+function providerIdFromCode(code: string) {
+  return `finance_provider_${slugId(code)}`;
+}
+
+function templateIdFromParts(providerCode: string, name: string) {
+  return `finance_template_${slugId(providerCode)}_${slugId(name)}`;
+}
+
+function definitionIdFromParts(templateId: string, fieldKey: string) {
+  return `finance_definition_${slugId(templateId)}_${slugId(fieldKey)}`;
+}
+
+function accountIdFromDisplayName(displayName: string) {
+  return `finance_account_${slugId(displayName) || "account"}_${uniqueSuffix()}`;
+}
+
+function accountFieldValueId(accountId: string, fieldKey: string, index: number) {
+  return `finance_account_field_${slugId(accountId)}_${slugId(fieldKey) || index + 1}`;
+}
+
 function channelTypeForCategory(category: FinanceAccountCategory) {
   if (category === FinanceAccountCategory.GATEWAY) return FinanceChannelTypeCode.GATEWAY;
   if (category === FinanceAccountCategory.WALLET) return FinanceChannelTypeCode.TRUEWALLET;
@@ -218,7 +254,10 @@ export const financeService = {
         description: data.description,
         isActive: data.isActive,
       },
-      create: data,
+      create: {
+        id: channelTypeIdFromCode(data.code),
+        ...data,
+      },
     }),
 
   updateChannelType: async (id: string, data: UpdateChannelTypeInput) => {
@@ -266,7 +305,10 @@ export const financeService = {
         description: data.description,
         isActive: data.isActive,
       },
-      create: data,
+      create: {
+        id: providerIdFromCode(data.code),
+        ...data,
+      },
       include: { channelType: true },
     });
   },
@@ -324,10 +366,12 @@ export const financeService = {
 
   createAccount: async (data: CreateAccountInput) => {
     await validateRequiredFields(data.category, data.provider, data.fields);
+    const accountId = accountIdFromDisplayName(data.displayName);
 
     return prisma.$transaction((tx) =>
       tx.financeAccount.create({
         data: {
+          id: accountId,
           category: data.category,
           provider: data.provider,
           displayName: data.displayName,
@@ -338,7 +382,8 @@ export const financeService = {
           expireDate: data.expireDate,
           note: data.note,
           fieldValues: {
-            create: data.fields.map((field) => ({
+            create: data.fields.map((field, index) => ({
+              id: accountFieldValueId(accountId, field.fieldKey, index),
               fieldKey: field.fieldKey,
               labelSnapshot: field.labelSnapshot,
               value: field.value,
@@ -381,7 +426,8 @@ export const financeService = {
           note: data.note,
           ...(fields && {
             fieldValues: {
-              create: fields.map((field) => ({
+              create: fields.map((field, index) => ({
+                id: accountFieldValueId(id, field.fieldKey, index),
                 fieldKey: field.fieldKey,
                 labelSnapshot: field.labelSnapshot,
                 value: field.value,
@@ -456,6 +502,7 @@ export const financeService = {
     const provider = await getProviderForTemplate(data.providerId);
     return prisma.financeFieldTemplate.create({
       data: {
+        id: templateIdFromParts(provider.code, data.name),
         category: data.category ?? defaultCategoryForChannelType(provider.channelType.code),
         provider: provider.code,
         channelTypeId: provider.channelTypeId,
@@ -506,6 +553,7 @@ export const financeService = {
     await financeService.getTemplate(data.templateId);
     return prisma.financeFieldDefinition.create({
       data: {
+        id: definitionIdFromParts(data.templateId, data.fieldKey),
         ...data,
         options: data.options ?? Prisma.JsonNull,
       },

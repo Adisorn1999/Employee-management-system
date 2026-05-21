@@ -2,7 +2,6 @@ import { FinanceAccountCategory, FinanceAccountStatus, FinanceChannelTypeCode, F
 import { z } from "zod";
 
 const idSchema = (fieldName: string) => z.string().trim().min(1, `${fieldName} is required`).max(120);
-const uuidSchema = (fieldName: string) => z.string().uuid(`${fieldName} must be a valid UUID`);
 const optionalText = (max = 500) => z.string().trim().max(max).optional().or(z.literal("").transform(() => undefined));
 const providerSchema = z.string().trim().min(1).max(60).transform((value) => value.toUpperCase());
 const dateSchema = z

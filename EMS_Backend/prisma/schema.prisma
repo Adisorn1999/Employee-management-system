@@ -278,7 +278,7 @@ model Employee {
 }
 
 model FinanceAccount {
-  id            String                 @id @default(uuid())
+  id            String                 @id
   category      FinanceAccountCategory
   provider      String
   displayName   String
@@ -302,7 +302,7 @@ model FinanceAccount {
 }
 
 model FinanceChannelType {
-  id          String                 @id @default(uuid())
+  id          String                 @id
   code        FinanceChannelTypeCode @unique
   name        String
   description String?
@@ -318,7 +318,7 @@ model FinanceChannelType {
 }
 
 model FinanceProvider {
-  id            String  @id @default(uuid())
+  id            String  @id
   channelTypeId String
   code          String
   name          String
@@ -337,7 +337,7 @@ model FinanceProvider {
 }
 
 model FinanceFieldTemplate {
-  id            String                 @id @default(uuid())
+  id            String                 @id
   category      FinanceAccountCategory
   provider      String
   channelTypeId String?
@@ -360,7 +360,7 @@ model FinanceFieldTemplate {
 }
 
 model FinanceFieldDefinition {
-  id          String           @id @default(uuid())
+  id          String           @id
   templateId  String
   fieldKey    String
   labelTh     String
@@ -381,7 +381,7 @@ model FinanceFieldDefinition {
 }
 
 model FinanceAccountFieldValue {
-  id            String @id @default(uuid())
+  id            String @id
   accountId     String
   fieldKey      String
   labelSnapshot String

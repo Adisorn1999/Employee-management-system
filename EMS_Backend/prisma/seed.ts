@@ -228,6 +228,22 @@ function financeProviderIdForTemplate(provider: string) {
   return undefined;
 }
 
+function financeSlugId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function financeTemplateId(provider: string, name: string) {
+  return `finance_template_${financeSlugId(provider)}_${financeSlugId(name)}`;
+}
+
+function financeDefinitionId(templateId: string, fieldKey: string) {
+  return `finance_definition_${financeSlugId(templateId)}_${financeSlugId(fieldKey)}`;
+}
+
 async function main() {
   await prisma.$connect();
 
@@ -520,6 +536,7 @@ async function main() {
   for (const templateSeed of financeTemplates) {
     const channelTypeId = financeChannelTypeIdForTemplate(templateSeed.category);
     const providerId = financeProviderIdForTemplate(templateSeed.provider);
+    const templateId = financeTemplateId(templateSeed.provider, templateSeed.name);
     const template = await prisma.financeFieldTemplate.upsert({
       where: {
         category_provider_name: {
@@ -534,6 +551,7 @@ async function main() {
         isActive: true,
       },
       create: {
+        id: templateId,
         category: templateSeed.category,
         provider: templateSeed.provider,
         channelTypeId,
@@ -561,6 +579,7 @@ async function main() {
           isActive: true,
         },
         create: {
+          id: financeDefinitionId(template.id, field.fieldKey),
           templateId: template.id,
           fieldKey: field.fieldKey,
           labelTh: field.labelTh,
